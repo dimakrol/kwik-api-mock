@@ -77,7 +77,7 @@ export class CheckoutController {
   @ApiBody({
     schema: {
       example: {
-        customers_id: 'cus_xxx',
+        customer_id: 'cus_xxx',
         amount: '150.00',
         mode: 'ONE_TIME',
         notify_url: 'http://localhost:3001/webhook/kwik/company-uuid',

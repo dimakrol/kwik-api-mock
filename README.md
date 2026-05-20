@@ -46,7 +46,7 @@ Features:
 
 ## Payment webhooks (important)
 
-Payment-related webhooks (`MANDATE_UPDATED`, `PAYMENT_STATUS`) are sent when the mock can resolve a **target URL**:
+Payment-related webhooks (`MANDATE_UPDATED`, `PAYMENT_UPDATED`) are sent when the mock can resolve a **target URL**:
 
 1. **`payment.notify_url`** on submit (or `webhook_url` / `callback_url` aliases), or  
 2. **Default template** — `http://localhost:3005/v1/webhook/kwik/{companyUuid}` — with `{companyUuid}` filled from:
@@ -65,13 +65,13 @@ export MOCK_DEFAULT_COMPANY_UUID="<your-company-uuid>"
 curl -u test_key:test_secret -X POST http://localhost:3099/1.0/payments/submit \
   -H "Content-Type: application/json" \
   -d '{
-    "customers_id": "cus_test_001",
-    "bank_accounts_id": "<bac_id from dashboard>",
+    "customer_id": "cus_test_001",
+    "bank_account_id": "<bank_account_id from dashboard>",
     "payment_methods_id": "pam_debicheck_absa",
     "amount": "500.00"
   }'
 
-# 3) Complete it → PAYMENT_STATUS (PAID) webhook to jb-inner-api
+# 3) Complete it → PAYMENT_UPDATED (COMPLETED) webhook to jb-inner-api
 curl -u test_key:test_secret -X POST http://localhost:3099/1.0/payments/<pay_id>/complete
 ```
 
@@ -103,7 +103,7 @@ Response includes `webhook_delivered` and `webhook_target_url`.
 | GET/POST | `/bank-accounts/list`, `create`, `update` | Bank accounts |
 | POST | `/checkout/page` | Create checkout session |
 | POST | `/payments/submit` | Create payment + mandate |
-| POST | `/payments/:id/complete` | Mark PAID + webhook |
+| POST | `/payments/:id/complete` | Mark COMPLETED + webhook |
 | POST | `/payments/status/:id/:status` | Update status + webhook |
 | POST | `/mandates/debicheck/update/cancel` | Cancel mandate |
 

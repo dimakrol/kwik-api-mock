@@ -70,9 +70,9 @@ export class AdminController {
   }
 
   @Post('payments/:paymentsId/complete')
-  @ApiOperation({ summary: 'Finish a payment (PAID) and deliver PAYMENT_STATUS webhook (no Basic auth)' })
+  @ApiOperation({ summary: 'Finish a payment (COMPLETED) and deliver PAYMENT_UPDATED webhook (no Basic auth)' })
   @ApiParam({ name: 'paymentsId', description: 'Payment ID (pay_xxx)' })
-  @ApiResponse({ status: 200, schema: { example: { ok: true, payments: { id: 'pay_xxx', status: 'PAID' } } } })
+  @ApiResponse({ status: 200, schema: { example: { ok: true, payments: { id: 'pay_xxx', status: 'COMPLETED' } } } })
   async completePayment(
     @Param('paymentsId') paymentsId: string,
     @Body() body: { company_uuid?: string } = {},

@@ -19,8 +19,8 @@ export class PaymentsController {
   @ApiBody({
     schema: {
       example: {
-        customers_id: 'cus_test_001',
-        bank_accounts_id: 'bac_xxx',
+        customer_id: 'cus_test_001',
+        bank_account_id: 'ban_xxx',
         payment_methods_id: 'pam_debicheck_absa',
         amount: '500.00',
         process_day: 1,
@@ -37,12 +37,22 @@ export class PaymentsController {
     schema: {
       example: {
         status: true,
-        payments: {
-          id: 'pay_xxx', mandate_id: 'man_xxx', customers_id: 'cus_xxx',
-          bank_accounts_id: 'bac_xxx', payment_methods_id: 'pam_debicheck_absa',
-          amount: '500.00', process_day: 1, payment_interval: 'MONTHLY',
-          date_start: '2026-01-01', date_end: '2027-01-01', status: 'RUNNING',
-        },
+        payments: [{
+          payments_id: 'pay_xxx',
+          mandate_id: 'man_xxx',
+          customer_id: 'cus_xxx',
+          bank_account_id: 'ban_xxx',
+          payment: {
+            amount: '500.00',
+            payment_methods_id: 'pam_debicheck_absa',
+            payment_status: 'RUNNING',
+            recurring: {
+              process_day: 1,
+              date_start: '2026-01-01',
+              date_end: '2027-01-01',
+            },
+          },
+        }],
       },
     },
   })
@@ -51,8 +61,10 @@ export class PaymentsController {
   async submit(
     @Body()
     body: {
-      customers_id: string;
-      bank_accounts_id: string;
+      customer_id?: string;
+      bank_account_id?: string;
+      customers_id?: string;
+      bank_accounts_id?: string;
       payment_methods_id: string;
       amount: string;
       process_day?: number;
@@ -70,18 +82,18 @@ export class PaymentsController {
   }
 
   @Post(':paymentsId/complete')
-  @ApiOperation({ summary: 'Finish a payment (PAID) and deliver PAYMENT_STATUS webhook' })
+  @ApiOperation({ summary: 'Finish a payment (COMPLETED) and deliver PAYMENT_UPDATED webhook' })
   @ApiParam({ name: 'paymentsId', description: 'Payment ID (pay_xxx)' })
   @ApiResponse({
     status: 200,
     schema: {
       example: {
         status: true,
-        payments: { id: 'pay_xxx', status: 'PAID', mandate_id: 'man_xxx', company_uuid: 'company-uuid' },
+        payments: { id: 'pay_xxx', status: 'COMPLETED', mandate_id: 'man_xxx', company_uuid: 'company-uuid' },
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Payment already PAID', schema: validationErrorSchema })
+  @ApiResponse({ status: 400, description: 'Payment already COMPLETED', schema: validationErrorSchema })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
   @ApiResponse({ status: 404, description: 'Payment not found' })
   async complete(

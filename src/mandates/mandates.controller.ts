@@ -36,15 +36,21 @@ export class MandatesController {
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
   @ApiResponse({ status: 404, description: 'Mandate not found' })
   async cancelDebicheck(
-    @Body() body: { mandate_id: string; cancel_reason: string },
-  ): Promise<{ status: boolean; mandate: object }> {
-    if (!body?.mandate_id) {
-      throw new BadRequestException({ status: false, error_code: '002', error_message: 'mandate_id is required' });
+    @Body() body: { records?: Array<{ id: string; cancel_reason: string }>; mandate_id?: string; cancel_reason?: string },
+  ): Promise<{ status: boolean; results: object[] }> {
+    const records = Array.isArray(body?.records) && body.records.length > 0
+      ? body.records
+      : [{ id: body?.mandate_id ?? '', cancel_reason: body?.cancel_reason ?? '' }];
+    const results: object[] = [];
+    for (const record of records) {
+      if (!record.id) {
+        throw new BadRequestException({ status: false, error_code: '002', error_message: 'id is required' });
+      }
+      if (!record.cancel_reason) {
+        throw new BadRequestException({ status: false, error_code: '002', error_message: 'cancel_reason is required' });
+      }
+      results.push(await this.service.cancelDebicheck(record.id, record.cancel_reason));
     }
-    if (!body?.cancel_reason) {
-      throw new BadRequestException({ status: false, error_code: '002', error_message: 'cancel_reason is required' });
-    }
-    const mandate = await this.service.cancelDebicheck(body.mandate_id, body.cancel_reason);
-    return { status: true, mandate };
+    return { status: true, results };
   }
 }

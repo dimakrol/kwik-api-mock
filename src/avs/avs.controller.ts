@@ -36,6 +36,10 @@ export class AvsController {
   })
   @ApiResponse({ status: 401, schema: { example: { status: false, error_code: '001', error_message: 'Invalid API key provided.' } } })
   verify(@Body() body: {
+    records?: Array<{
+      customer?: Record<string, unknown>;
+      bank_account?: Record<string, unknown>;
+    }>;
     bank_account_number?: string;
     bank_branch_code?: number | string;
     bank_name?: string;
@@ -44,6 +48,9 @@ export class AvsController {
     initials?: string;
     surname?: string;
   }): { status: boolean; results: object[] } {
+    if (Array.isArray(body?.records) && body.records.length > 0) {
+      return { status: true, results: body.records.map((record) => this.service.verify(record)) };
+    }
     return { status: true, results: [this.service.verify(body)] };
   }
 }

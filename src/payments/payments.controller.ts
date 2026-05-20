@@ -3,7 +3,7 @@ import { ApiBasicAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } f
 import { BasicAuthGuard } from '../common/basic-auth.guard';
 import { PaymentsService } from './payments.service';
 
-const VALID_STATUSES = ['RUNNING', 'STOPPED', 'PAUSED', 'CANCELLED', 'PAID', 'FAILED', 'REVERSED'];
+const VALID_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_REPLY', 'PAUSED', 'PENDING', 'REJECTED', 'RUNNING', 'STOPPED'];
 const unauthorizedSchema = { example: { status: false, error_code: '001', error_message: 'Invalid API key provided.' } };
 const validationErrorSchema = { example: { status: false, error_code: '002', error_message: 'Readable validation message' } };
 
@@ -64,7 +64,7 @@ export class PaymentsController {
       callback_url?: string;
       company_uuid?: string;
     },
-  ): Promise<{ status: boolean; payments: object }> {
+  ): Promise<{ status: boolean; payments: object[] }> {
     const payments = await this.service.submit(body);
     return { status: true, payments };
   }
@@ -98,7 +98,7 @@ export class PaymentsController {
   @ApiParam({ name: 'status', enum: VALID_STATUSES, description: 'New payment status' })
   @ApiResponse({
     status: 200,
-    schema: { example: { status: true, payments: { id: 'pay_xxx', status: 'PAID' } } },
+    schema: { example: { status: true } },
   })
   @ApiResponse({ status: 400, description: 'Invalid status', schema: validationErrorSchema })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
@@ -106,7 +106,7 @@ export class PaymentsController {
   async updateStatus(
     @Param('paymentsId') paymentsId: string,
     @Param('status') status: string,
-  ): Promise<{ status: boolean; payments: object }> {
+  ): Promise<{ status: boolean }> {
     if (!VALID_STATUSES.includes(status)) {
       throw new BadRequestException({
         status: false,
@@ -114,7 +114,7 @@ export class PaymentsController {
         error_message: `Invalid status "${status}". Must be one of: ${VALID_STATUSES.join(', ')}`,
       });
     }
-    const payments = await this.service.updateStatus(paymentsId, status);
-    return { status: true, payments };
+    await this.service.updateStatus(paymentsId, status);
+    return { status: true };
   }
 }

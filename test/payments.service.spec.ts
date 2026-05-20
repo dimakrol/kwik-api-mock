@@ -97,34 +97,35 @@ describe('PaymentsService', () => {
       expect(paymentArg.mandate_id).toBe(mandateArg.id);
     });
 
-    it('should return object with id, mandate_id, customers_id, bank_accounts_id, payment_methods_id, amount, status', async () => {
-      const result = await service.submit(baseDto) as Record<string, unknown>;
-      expect(result).toHaveProperty('id');
+    it('should return Kwik documented payments array', async () => {
+      const result = (await service.submit(baseDto))[0] as Record<string, unknown>;
+      expect(result).toHaveProperty('payments_id');
       expect(result).toHaveProperty('mandate_id');
-      expect(result.customers_id).toBe('cus_test');
-      expect(result.bank_accounts_id).toBe('bac_test');
-      expect(result.payment_methods_id).toBe('pam_test');
-      expect(result.amount).toBe('500.00');
-      expect(result.status).toBe('RUNNING');
+      expect(result.customer_id).toBe('cus_test');
+      expect(result.bank_account_id).toBe('bac_test');
+      expect(result.payment).toMatchObject({
+        payment_methods_id: 'pam_test',
+        amount: '500.00',
+        payment_status: 'RUNNING',
+      });
     });
 
     it('should handle optional fields: process_day, payment_interval, date_start, date_end', async () => {
       const dto = { ...baseDto, process_day: 1, payment_interval: 'MONTHLY', date_start: '2025-01-01', date_end: '2026-01-01' };
-      const result = await service.submit(dto) as Record<string, unknown>;
-      expect(result.process_day).toBe(1);
-      expect(result.payment_interval).toBe('MONTHLY');
-      expect(result.date_start).toBe('2025-01-01');
-      expect(result.date_end).toBe('2026-01-01');
+      const result = (await service.submit(dto))[0] as Record<string, any>;
+      expect(result.payment.recurring.process_day).toBe(1);
+      expect(result.payment.recurring.date_start).toBe('2025-01-01');
+      expect(result.payment.recurring.date_end).toBe('2026-01-01');
     });
 
     it('should set process_day to null when not provided', async () => {
-      const result = await service.submit(baseDto) as Record<string, unknown>;
-      expect(result.process_day).toBeNull();
+      const result = (await service.submit(baseDto))[0] as Record<string, any>;
+      expect(result.payment.recurring).toBeUndefined();
     });
 
     it('should set payment_interval to null when not provided', async () => {
-      const result = await service.submit(baseDto) as Record<string, unknown>;
-      expect(result.payment_interval).toBeNull();
+      const result = (await service.submit(baseDto))[0] as Record<string, any>;
+      expect(result.mandate.recurring).toBeUndefined();
     });
 
     it('should throw BadRequestException when required field is missing', async () => {
@@ -141,7 +142,7 @@ describe('PaymentsService', () => {
       expect(mockWebhookDelivery.deliver).not.toHaveBeenCalled();
     });
 
-    it('should deliver MANDATE_UPDATED and PAYMENT_STATUS webhooks when notify_url provided', async () => {
+    it('should deliver documented mandate.updated and payment.updated webhooks when notify_url provided', async () => {
       jest.useFakeTimers();
       await service.submit({ ...baseDto, notify_url: 'https://hook.example.com' });
       expect(mockWebhookDelivery.deliver).not.toHaveBeenCalled();
@@ -149,7 +150,7 @@ describe('PaymentsService', () => {
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledTimes(2);
       const calls = mockWebhookDelivery.deliver.mock.calls.map((c: [Record<string, unknown>]) => c[0].event_type);
       expect(calls).toContain('MANDATE_UPDATED');
-      expect(calls).toContain('PAYMENT_STATUS');
+      expect(calls).toContain('PAYMENT_UPDATED');
       jest.useRealTimers();
     });
 
@@ -179,14 +180,13 @@ describe('PaymentsService', () => {
       await expect(service.updateStatus('pay_nonexistent', 'STOPPED')).rejects.toThrow(NotFoundException);
     });
 
-    it('should return { id, status } on success', async () => {
+    it('should return documented status true on success', async () => {
       const existingPayment = { id: 'pay_abc', status: 'RUNNING', notify_url: null } as PaymentEntity;
       mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
 
       const result = await service.updateStatus('pay_abc', 'STOPPED') as Record<string, unknown>;
 
-      expect(result.id).toBe('pay_abc');
-      expect(result.status).toBe('STOPPED');
+      expect(result.status).toBe(true);
     });
 
     it('should throw BadRequestException for invalid status', async () => {
@@ -196,16 +196,16 @@ describe('PaymentsService', () => {
       await expect(service.updateStatus('pay_abc', 'INVALID_STATUS')).rejects.toThrow(BadRequestException);
     });
 
-    it('should deliver PAYMENT_STATUS webhook when payment has notify_url', async () => {
+    it('should deliver PAYMENT_UPDATED webhook when payment has notify_url', async () => {
       const existingPayment = { id: 'pay_abc', status: 'RUNNING', notify_url: 'https://hook.example.com', mandate_id: 'man_abc', customers_id: 'cus_1', amount: '100.00' } as PaymentEntity;
       mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
 
-      await service.updateStatus('pay_abc', 'PAID');
+      await service.updateStatus('pay_abc', 'COMPLETED');
 
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
-        event_type: 'PAYMENT_STATUS',
+        event_type: 'PAYMENT_UPDATED',
         target_url: 'https://hook.example.com',
-        payload: expect.objectContaining({ payment_status: 'PAID' }),
+        payload: expect.objectContaining({ payment_status: 'COMPLETED' }),
       }));
     });
 
@@ -222,7 +222,7 @@ describe('PaymentsService', () => {
       } as PaymentEntity;
       mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
 
-      await service.updateStatus('pay_abc', 'PAID');
+      await service.updateStatus('pay_abc', 'COMPLETED');
 
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
         target_url: 'http://localhost:3005/v1/webhook/kwik/co-99',
@@ -231,7 +231,7 @@ describe('PaymentsService', () => {
   });
 
   describe('complete()', () => {
-    it('should set payment status to PAID and deliver webhook', async () => {
+    it('should set payment status to COMPLETED and deliver webhook', async () => {
       mockConfig.defaultNotifyUrl = 'http://localhost:3005/v1/webhook/kwik/{companyUuid}';
       const existingPayment = {
         id: 'pay_abc',
@@ -246,13 +246,13 @@ describe('PaymentsService', () => {
 
       const result = await service.complete('pay_abc') as Record<string, unknown>;
 
-      expect(mockPaymentRepo.update).toHaveBeenCalledWith('pay_abc', { status: 'PAID' });
+      expect(mockPaymentRepo.update).toHaveBeenCalledWith('pay_abc', { status: 'COMPLETED' });
       expect(mockMandateRepo.update).toHaveBeenCalledWith('man_abc', { status: 'ACTIVE' });
-      expect(result.status).toBe('PAID');
+      expect(result.status).toBe('COMPLETED');
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
-        event_type: 'PAYMENT_STATUS',
+        event_type: 'PAYMENT_UPDATED',
         target_url: 'http://localhost:3005/v1/webhook/kwik/co-1',
-        payload: expect.objectContaining({ payment_status: 'PAID', status: 'PAID' }),
+        payload: expect.objectContaining({ payment_status: 'COMPLETED' }),
       }));
     });
 
@@ -261,8 +261,8 @@ describe('PaymentsService', () => {
       await expect(service.complete('pay_missing')).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException when payment is already PAID', async () => {
-      mockPaymentRepo.findOne.mockResolvedValue({ id: 'pay_abc', status: 'PAID' } as PaymentEntity);
+    it('should throw BadRequestException when payment is already COMPLETED', async () => {
+      mockPaymentRepo.findOne.mockResolvedValue({ id: 'pay_abc', status: 'COMPLETED' } as PaymentEntity);
       await expect(service.complete('pay_abc')).rejects.toThrow(BadRequestException);
     });
 

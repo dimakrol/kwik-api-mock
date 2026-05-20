@@ -101,7 +101,7 @@ describe('WebhookDeliveryService', () => {
       expect(savedArg.error).toBe('Request failed');
     });
 
-    it('should merge event_type and event_id into the POST body', async () => {
+    it('should send documented webhook body', async () => {
       outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({
@@ -112,9 +112,10 @@ describe('WebhookDeliveryService', () => {
       });
 
       const postBody = outboundLog.post.mock.calls[0][1] as Record<string, unknown>;
-      expect(postBody.event_type).toBe('CHECKOUT_COMPLETED');
-      expect(postBody.event_id).toBe('evt_123');
-      expect(postBody.checkout_id).toBe('cho_1');
+      expect(postBody.webhook_event).toBe('CHECKOUT_COMPLETED');
+      expect(postBody.type).toBe('checkout.completed');
+      expect(postBody.id).toBe('evt_123');
+      expect(postBody.results).toEqual([{ checkout_id: 'cho_1' }]);
     });
 
     it('should add Basic Auth header in basic webhookAuthMode', async () => {
@@ -186,7 +187,9 @@ describe('WebhookDeliveryService', () => {
       });
 
       const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
-      expect(headers['x-kwik-signature']).toBeDefined();
+      expect(headers['X-Signature']).toBeDefined();
+      expect(headers['X-Timestamp']).toBeDefined();
+      expect(headers['User-Agent']).toBe('Kwik-Webhooks/1.0');
     });
 
     it('should store delivery with id starting with "wdl_"', async () => {

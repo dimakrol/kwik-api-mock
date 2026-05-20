@@ -44,21 +44,18 @@ export class MandatesService {
         event_type: 'MANDATE_UPDATED',
         target_url: effectiveNotifyUrl,
         payload: {
-          kwik_mandate_id: mandateId,
-          mandate_id: mandateId,
-          kwik_payment_id: mandate.payments_id ?? null,
-          payments_id: mandate.payments_id ?? null,
-          kwik_customer_id: mandate.customers_id,
-          customers_id: mandate.customers_id,
+          id: mandateId,
+          payment_id: mandate.payments_id ?? null,
+          customer_id: mandate.customers_id,
+          bank_account_id: mandate.bank_accounts_id,
           mandate_status: 'CANCELLED',
-          status: 'CANCELLED',
         },
       });
     }
 
     return {
       id: mandateId,
-      status: 'CANCELLED',
+      mandate_status: 'CANCELLED',
       cancel_reason: cancelReason,
     };
   }

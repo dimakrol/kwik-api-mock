@@ -88,14 +88,14 @@ describe('MandatesService', () => {
       expect(mockPaymentRepo.update).not.toHaveBeenCalled();
     });
 
-    it('should return { id, status: "CANCELLED", cancel_reason }', async () => {
+    it('should return documented mandate status', async () => {
       const mandate = { id: 'man_abc', payments_id: null, customers_id: 'cus_1', bank_accounts_id: 'bac_1', status: 'PENDING' } as MandateEntity;
       mockMandateRepo.findOne.mockResolvedValue(mandate);
 
       const result = await service.cancelDebicheck('man_abc', 'No longer needed') as Record<string, unknown>;
 
       expect(result.id).toBe('man_abc');
-      expect(result.status).toBe('CANCELLED');
+      expect(result.mandate_status).toBe('CANCELLED');
       expect(result.cancel_reason).toBe('No longer needed');
     });
 
@@ -109,7 +109,7 @@ describe('MandatesService', () => {
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
         event_type: 'MANDATE_UPDATED',
         target_url: 'https://hook.example.com',
-        payload: expect.objectContaining({ mandate_status: 'CANCELLED', kwik_mandate_id: 'man_abc' }),
+        payload: expect.objectContaining({ mandate_status: 'CANCELLED', id: 'man_abc' }),
       }));
     });
 

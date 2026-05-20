@@ -2,6 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { mockConfig } from '../common/mock-config';
 
 interface AvsPayload {
+  customer?: {
+    id_number?: string;
+    person_name?: string;
+    person_surname?: string;
+  };
+  bank_account?: {
+    bank_account_number?: string;
+    bank_branch_code?: number | string;
+    bank_name?: string;
+  };
   bank_account_number?: string;
   bank_branch_code?: number | string;
   bank_name?: string;
@@ -17,10 +27,11 @@ export class AvsService {
     const failUnknown = mockConfig.avsFailUnknown;
 
     if (failUnknown) {
+      const bankAccount = payload.bank_account ?? {};
       const branchCode =
-        typeof payload.bank_branch_code === 'string'
-          ? parseInt(payload.bank_branch_code, 10)
-          : payload.bank_branch_code;
+        typeof (bankAccount.bank_branch_code ?? payload.bank_branch_code) === 'string'
+          ? parseInt(String(bankAccount.bank_branch_code ?? payload.bank_branch_code), 10)
+          : bankAccount.bank_branch_code ?? payload.bank_branch_code;
       const passed = branchCode === 632005;
       return {
         passed,

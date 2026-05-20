@@ -47,9 +47,9 @@ describe('CheckoutService', () => {
   const baseDto = { amount: '100.00', mode: 'DEBICHECK' };
 
   describe('createPage()', () => {
-    it('should generate an ID starting with "cho_"', async () => {
+    it('should generate a documented checkout ID starting with "chk_"', async () => {
       const result = await service.createPage(baseDto) as Record<string, unknown>;
-      expect(result.id).toMatch(/^cho_/);
+      expect(result.id).toMatch(/^chk_/);
     });
 
     it('should build page_url as `${MOCK_BASE_URL}/checkout/${id}`', async () => {
@@ -61,7 +61,7 @@ describe('CheckoutService', () => {
     it('should use default "http://localhost:3099" when MOCK_BASE_URL is not set', async () => {
       delete process.env.MOCK_BASE_URL;
       const result = await service.createPage(baseDto) as Record<string, unknown>;
-      expect(result.page_url).toMatch(/^http:\/\/localhost:3099\/checkout\/cho_/);
+      expect(result.page_url).toMatch(/^http:\/\/localhost:3099\/checkout\/chk_/);
     });
 
     it('should use process.env.MOCK_BASE_URL when set', async () => {
@@ -70,9 +70,10 @@ describe('CheckoutService', () => {
       expect((result.page_url as string).startsWith('https://custom.host')).toBe(true);
     });
 
-    it('should set status to PENDING', async () => {
+    it('should return session_id and expires_at', async () => {
       const result = await service.createPage(baseDto) as Record<string, unknown>;
-      expect(result.status).toBe('PENDING');
+      expect(result.session_id).toMatch(/^ses_/);
+      expect(result.expires_at).toBeTruthy();
     });
 
     it('should save entity to repo', async () => {
@@ -81,13 +82,13 @@ describe('CheckoutService', () => {
       expect(mockRepo.save).toHaveBeenCalledTimes(1);
     });
 
-    it('should return object with id, page_url, mode, amount, status', async () => {
+    it('should return documented checkout result shape', async () => {
       const result = await service.createPage(baseDto) as Record<string, unknown>;
       expect(result).toHaveProperty('id');
+      expect(result).toHaveProperty('session_id');
       expect(result).toHaveProperty('page_url');
-      expect(result.mode).toBe('DEBICHECK');
       expect(result.amount).toBe('100.00');
-      expect(result.status).toBe('PENDING');
+      expect(result.currency).toBe('ZAR');
     });
 
     it('should set customers_id to null when not provided', async () => {
@@ -170,7 +171,10 @@ describe('CheckoutService', () => {
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
         event_type: 'CHECKOUT_COMPLETED',
         target_url: 'https://hook.example.com',
-        payload: expect.objectContaining({ payment_status: 'PAID', checkout_id: 'cho_abc' }),
+        payload: expect.objectContaining({
+          checkout: expect.objectContaining({ id: 'cho_abc' }),
+          payment: expect.objectContaining({ payment_status: 'PAID' }),
+        }),
       }));
     });
   });
@@ -186,7 +190,7 @@ describe('CheckoutService', () => {
       expect(result.status).toBe('FAILED');
     });
 
-    it('should deliver CHECKOUT_COMPLETED webhook with FAILED status when notify_url set', async () => {
+    it('should deliver CHECKOUT_FAILED webhook with FAILED status when notify_url set', async () => {
       const session = {
         id: 'cho_abc', amount: '100.00', customers_id: 'cus_1', notify_url: 'https://hook.example.com',
       } as CheckoutSessionEntity;
@@ -195,8 +199,10 @@ describe('CheckoutService', () => {
       await service.failSession('cho_abc');
 
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
-        event_type: 'CHECKOUT_COMPLETED',
-        payload: expect.objectContaining({ payment_status: 'FAILED' }),
+        event_type: 'CHECKOUT_FAILED',
+        payload: expect.objectContaining({
+          payment: expect.objectContaining({ payment_status: 'FAILED' }),
+        }),
       }));
     });
   });

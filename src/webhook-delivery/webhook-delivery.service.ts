@@ -41,7 +41,14 @@ export class WebhookDeliveryService {
 
   async deliver(opts: DeliverWebhookOptions): Promise<WebhookDeliveryEntity> {
     const event_id = opts.event_id ?? genId('evt');
-    const body = { ...opts.payload, event_type: opts.event_type, event_id };
+    const body = {
+      id: event_id,
+      type: this.eventTypeToName(opts.event_type),
+      status: true,
+      results: [opts.payload],
+      webhook_event: opts.event_type,
+      created_at: new Date().toISOString(),
+    };
     const requestBodyStr = JSON.stringify(body);
     const headers = this.buildHeaders(requestBodyStr, opts.auth_override);
 
@@ -139,7 +146,11 @@ export class WebhookDeliveryService {
       hmac_secret?: string;
     },
   ): Record<string, string> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Kwik-Webhooks/1.0',
+      'X-Timestamp': Math.floor(Date.now() / 1000).toString(),
+    };
     const authMode = authOverride?.auth_mode ?? mockConfig.webhookAuthMode;
     const key = authOverride?.access_key ?? mockConfig.webhookAccessKey;
     const secret = authOverride?.access_secret ?? mockConfig.webhookAccessSecret;
@@ -150,9 +161,13 @@ export class WebhookDeliveryService {
     } else if (authMode === 'api-key') {
       headers['x-kwik-api-key'] = key;
     } else if (authMode === 'hmac' && hmacSecret) {
-      headers['x-kwik-signature'] = createHmac('sha256', hmacSecret).update(body).digest('hex');
+      headers['X-Signature'] = createHmac('sha256', hmacSecret).update(body).digest('hex');
     }
 
     return headers;
+  }
+
+  private eventTypeToName(eventType: string): string {
+    return eventType.toLowerCase().replace(/_/g, '.');
   }
 }

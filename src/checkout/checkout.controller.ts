@@ -97,16 +97,25 @@ export class CheckoutController {
   @ApiResponse({ status: 400, description: 'Validation error', schema: { example: { status: false, error_code: '002', error_message: 'amount is required' } } })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: { example: { status: false, error_code: '001', error_message: 'Invalid API key provided.' } } })
   async createPage(
-    @Body() body: { customers_id?: string; amount: string; mode: string; notify_url?: string },
-  ): Promise<{ status: boolean; checkout: object }> {
+    @Body() body: {
+      customer_id?: string;
+      customers_id?: string;
+      amount: string;
+      mode: string;
+      currency?: string;
+      order_id?: string;
+      notify_url?: string;
+      redirects?: { notify_url?: string };
+    },
+  ): Promise<{ status: boolean; result: object }> {
     if (!body?.amount) {
       throw new BadRequestException({ status: false, error_code: '002', error_message: 'amount is required' });
     }
     if (!body?.mode) {
       throw new BadRequestException({ status: false, error_code: '002', error_message: 'mode is required' });
     }
-    const checkout = await this.service.createPage(body);
-    return { status: true, checkout };
+    const result = await this.service.createPage(body);
+    return { status: true, result };
   }
 
   @Get(':id')

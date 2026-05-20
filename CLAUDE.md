@@ -1,6 +1,6 @@
 # CLAUDE.md — kwik-api-mock
 
-NestJS + SQLite mock server for the [Kwik](https://kwik.co.za) payment API. Intended for local integration testing of `jb-application-be`, `jb-flow-engine`, and `jb-inner-api` without hitting the real Kwik staging environment.
+NestJS + SQLite mock server for the [Kwik](https://kwik.co.za) payment API. Used for local integration testing of `jb-application-be`, `jb-flow-engine`, and `jb-inner-api` without hitting real Kwik staging.
 
 ## Commands
 
@@ -8,265 +8,264 @@ NestJS + SQLite mock server for the [Kwik](https://kwik.co.za) payment API. Inte
 pnpm install
 pnpm start:dev       # watch mode, port 3099
 pnpm build           # compiles to dist/ via tsconfig.build.json
-pnpm test            # Jest unit tests (143 tests across 12 spec files)
+pnpm test            # Jest unit tests (~164 tests, 15 spec files)
 pnpm test:cov        # test + coverage report
+pnpm lint            # ESLint
 ```
 
 Point consuming services at the mock:
+
 ```
 KWIK_API_BASE_URL=http://localhost:3099/1.0
 ```
 
-Swagger UI: `http://localhost:3099/docs`
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:3099/docs` | Swagger UI |
+| `http://localhost:3099/interface` | Dev dashboard (records, webhooks, scenario) |
+
+Human-oriented setup: see **[README.md](./README.md)**.
 
 ## Architecture
 
-Single NestJS app. No Kafka, no Redis. SQLite database (`kwik-mock.sqlite`, git-ignored) created automatically on first run via TypeORM `synchronize: true`.
+Single NestJS app. No Kafka, no Redis. SQLite (`kwik-mock.sqlite`, git-ignored) via TypeORM `synchronize: true`.
 
 ```
 src/
-  main.ts                      # bootstrap — global prefix /1.0, excludes /checkout/* and /admin/*
-  app.module.ts                # root module, TypeORM config (better-sqlite3)
+  main.ts                      # bootstrap — global prefix /1.0; excludes /admin/*, /checkout/*, /interface/*
+  app.module.ts                # root module, TypeORM (better-sqlite3)
   common/
-    basic-auth.guard.ts        # validates Basic/api-key auth; reads mockConfig for mode
-    gen-id.util.ts             # genId('cus') → "cus_<16 hex chars>"
-    mock-config.ts             # runtime-mutable singleton for scenario flags (env var fallback)
-  database/entities/           # 8 TypeORM entities (see Data Model below)
-  seed/seed.service.ts         # runs onModuleInit, idempotent; exposes seed() for admin re-seed
-  webhook-delivery/            # WebhookDeliveryService — centralised outbound webhook logic
-  payment-methods/             # GET /1.0/payment-methods
-  lookups/                     # GET /1.0/lookups/:type[/:payment_methods_id]
-  cdv/                         # POST /1.0/cdv
-  avs/                         # POST /1.0/avs-r
-  customers/                   # GET /1.0/customers/list  POST /1.0/customers/create
-  bank-accounts/               # GET/POST /1.0/bank-accounts/list|create|update
-  payments/                    # POST /1.0/payments/submit|status/:id/:status
-  checkout/                    # POST /1.0/checkout/page  GET/POST /checkout/:id/*
-  mandates/                    # POST /1.0/mandates/debicheck/update/cancel
-  admin/                       # /admin/* — no auth, webhook firing + DB inspection + scenario
-test/                          # Jest unit tests, one spec per service
-scripts/
-  test-jobix-kwik-e2e.sh       # E2E test script exercising mock + Jobix services
+    basic-auth.guard.ts        # Basic / x-kwik-api-key; reads mockConfig.authMode
+    gen-id.util.ts             # genId('cus') → "cus_<16 hex>"
+    mock-config.ts             # runtime-mutable scenario flags (env fallback)
+    resolve-payment-notify-url.util.ts  # payment notify_url + {companyUuid} template
+    logging/                   # Pino HTTP interceptor, outbound webhook logging
+  database/entities/           # 8 TypeORM entities
+  seed/seed.service.ts         # onModuleInit + POST /admin/seed
+  webhook-delivery/            # WebhookDeliveryService — all outbound webhooks
+  payment-methods/ lookups/ cdv/ avs/ customers/ bank-accounts/
+  payments/                    # submit, status, complete
+  checkout/                    # page + HTML UI routes
+  mandates/                    # debicheck cancel
+  admin/                       # /admin/* — no auth
+  interface/                   # static dashboard at / and /interface
+test/                          # Jest specs per service/util
+scripts/test-jobix-kwik-e2e.sh # mock-only or full Jobix e2e
 ```
 
-Each feature directory follows the pattern: `*.module.ts` / `*.controller.ts` / `*.service.ts`.
+Feature modules: `*.module.ts` / `*.controller.ts` / `*.service.ts`.
+
+**Global prefix:** `/1.0` for Kwik routes. Excluded: `/admin/*`, `/checkout/*`, `/`, `/interface`, `/docs`.
 
 ## API Layers
 
 ### Kwik API (`/1.0/*`)
-All routes require `Authorization: Basic <base64(key:secret)>` or `x-kwik-api-key: <key>` (configurable via `MOCK_AUTH_MODE`).
+
+Requires `Authorization: Basic <base64(key:secret)>` or `x-kwik-api-key` (`MOCK_AUTH_MODE`).
 
 | Method | Path | Description |
-|---|---|---|
-| GET | `/1.0/payment-methods` | Returns 2 seeded methods |
+|--------|------|-------------|
+| GET | `/1.0/payment-methods` | 2 seeded methods |
 | GET | `/1.0/lookups/:type[/:pam_id]` | Bank names per payment method |
-| POST | `/1.0/cdv` | CDV bank account validation |
-| POST | `/1.0/avs-r` | AVS owner verification |
-| GET | `/1.0/customers/list` | List customers (filterable — see Filtering) |
+| POST | `/1.0/cdv` | CDV validation |
+| POST | `/1.0/avs-r` | AVS verification |
+| GET | `/1.0/customers/list` | List (exact-match query filters) |
 | POST | `/1.0/customers/create` | `{ records: [...] }` |
-| GET | `/1.0/bank-accounts/list` | List bank accounts (filterable — see Filtering) |
-| POST | `/1.0/bank-accounts/create` | `{ records: [...] }` |
-| POST | `/1.0/bank-accounts/update` | `{ records: [{ id, ...fields }] }` |
-| POST | `/1.0/checkout/page` | Creates checkout session, returns `page_url` |
-| POST | `/1.0/payments/submit` | Creates payment + mandate; fires webhooks |
-| POST | `/1.0/payments/status/:id/:status` | Updates payment status; fires webhook |
-| POST | `/1.0/mandates/debicheck/update/cancel` | Cancels mandate + stops linked payment; fires webhook |
+| GET/POST | `/1.0/bank-accounts/list`, `create`, `update` | Bank accounts |
+| POST | `/1.0/checkout/page` | Checkout session + `page_url` |
+| POST | `/1.0/payments/submit` | Payment + mandate; optional webhooks |
+| POST | `/1.0/payments/:paymentsId/complete` | PAID + mandate ACTIVE + `PAYMENT_STATUS` webhook |
+| POST | `/1.0/payments/status/:id/:status` | Status update + webhook |
+| POST | `/1.0/mandates/debicheck/update/cancel` | Cancel mandate; stop payment; webhook |
 
-### Checkout UI (no `/1.0/` prefix, no auth)
+**`payments/submit` body aliases:** `notify_url`, `webhook_url`, `callback_url`; **`company_uuid`** stored on payment for webhook URL resolution.
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/checkout/:id` | HTML page with complete/fail/save-card buttons |
-| POST | `/checkout/:id/complete` | Marks COMPLETED, generates card_id, fires CHECKOUT_COMPLETED |
-| POST | `/checkout/:id/fail` | Marks FAILED, fires CHECKOUT_COMPLETED with FAILED status |
-| POST | `/checkout/:id/save-card` | Marks CARD_SAVED, generates card_id, fires CHECKOUT_COMPLETED |
+**`payments/complete` body (optional):** `{ "company_uuid": "..." }` — persisted on payment if missing, then webhook fired.
+
+### Checkout UI (no `/1.0/`, no auth)
+
+| Method | Path |
+|--------|------|
+| GET | `/checkout/:id` |
+| POST | `/checkout/:id/complete`, `/fail`, `/save-card` |
+
+Uses `session.notify_url` or `mockConfig.defaultNotifyUrl` (not payment `resolvePaymentNotifyUrl`).
 
 ### Admin API (`/admin/*`, no auth)
 
 | Method | Path | Purpose |
-|---|---|---|
-| POST | `/admin/webhook/fire` | Fire a webhook to any target URL |
-| POST | `/admin/webhook/replay/:deliveryId` | Replay a stored webhook delivery |
-| GET | `/admin/data` | Dump all DB tables + webhook history + scenario config |
-| DELETE | `/admin/reset` | Clear transactional data; preserves seed. `?all=true` clears everything + re-seeds |
-| POST | `/admin/seed` | Re-run seed (safe to call repeatedly) |
-| GET | `/admin/scenario` | Read current runtime scenario flags |
-| POST | `/admin/scenario` | Update scenario flags at runtime without restart |
+|--------|------|---------|
+| POST | `/admin/webhook/fire` | Fire webhook to arbitrary URL |
+| POST | `/admin/webhook/replay/:deliveryId` | Replay stored delivery |
+| POST | `/admin/payments/:paymentsId/complete` | Same as Kwik complete; optional `company_uuid` body |
+| GET | `/admin/data` | Full DB dump + `webhook_deliveries` + scenario |
+| GET | `/admin/interface-data` | Dashboard aggregate `{ data, summary }` |
+| DELETE | `/admin/reset` | Clear transactional data; `?all=true` re-seeds |
+| POST | `/admin/seed` | Re-run seed |
+| GET/POST | `/admin/scenario` | Read/update runtime flags |
+
+### Web interface
+
+Static assets: `src/interface/static/` — served at `/` and `/interface` (excluded from `/1.0` prefix).
 
 ## Data Model
 
 | Entity | Table | ID prefix | Notes |
-|---|---|---|---|
+|--------|-------|-----------|-------|
 | `PaymentMethodEntity` | `payment_methods` | `pam_` | Seeded |
 | `LookupEntity` | `lookups` | `loo_` | Seeded |
-| `CustomerEntity` | `customers` | `cus_` | Created via API |
-| `BankAccountEntity` | `bank_accounts` | `bac_` | Created via API |
-| `PaymentEntity` | `payments` | `pay_` | Has `notify_url` column for webhook routing |
-| `MandateEntity` | `mandates` | `man_` | Created alongside payment |
-| `CheckoutSessionEntity` | `checkout_sessions` | `cho_` | Has `card_id` column set on complete/save-card |
-| `WebhookDeliveryEntity` | `webhook_deliveries` | `wdl_` | Stores every outbound webhook attempt |
+| `CustomerEntity` | `customers` | `cus_` | API-created |
+| `BankAccountEntity` | `bank_accounts` | `bac_` | API-created |
+| `PaymentEntity` | `payments` | `pay_` | `notify_url`, **`company_uuid`**, `status` |
+| `MandateEntity` | `mandates` | `man_` | Linked to payment |
+| `CheckoutSessionEntity` | `checkout_sessions` | `cho_` | `notify_url`, `card_id` |
+| `WebhookDeliveryEntity` | `webhook_deliveries` | `wdl_` | Every outbound attempt |
 
-## Seed Data
+## Payment webhook URL resolution
 
-Applied automatically on startup and on `POST /admin/seed`. Idempotent.
+`resolvePaymentNotifyUrl()` in `src/common/resolve-payment-notify-url.util.ts`:
 
-**Payment methods:** `pam_debicheck_absa` (DEBICHECK), `pam_eft_absa` (DEBIT_ORDER)
+1. `payment.notify_url` if set  
+2. Else template: `mockConfig.defaultNotifyUrl` ?? env `MOCK_DEFAULT_NOTIFY_URL` ??  
+   `http://localhost:3005/v1/webhook/kwik/{companyUuid}`  
+3. Substitute `{companyUuid}` from `payment.company_uuid` ?? `mockConfig.defaultCompanyUuid` ?? env `MOCK_DEFAULT_COMPANY_UUID`  
+4. If placeholder remains unresolved → **null** → webhook skipped (warn logged in `PaymentsService`)
 
-**Lookups (banks):** ABSA_BANK_LIMITED (632005), STANDARD_BANK (051001), FNB (250655), NEDBANK (198765) — linked to both payment methods.
+Used by: `payments/submit`, `payments/status`, `payments/complete`.
 
-**Test customer:** `cus_test_001` — MRS YANDI DEED, ID `8411180614084`
-
-## Filtering
-
-### `GET /1.0/customers/list`
-Query params (exact-match): `id`, `reference`, `email`, `customer_email`, `id_number`, `customer_id_number`, `contact_number`, `customer_status`
-
-### `GET /1.0/bank-accounts/list`
-Query params (exact-match): `id`, `customers_id`, `bank_account_number`, `bank_name`, `bank_branch_code`, `reference`, `status`
-
-## CDV Behaviour
-
-By default all accounts pass (`passed: true`). `bank_branch_code` accepts both `string` and `number` input; always returned as `string`.
-
-Set `CDV_FAIL_UNKNOWN=true` (or `POST /admin/scenario { "cdvFailUnknown": true }`) to only pass known test accounts:
-
-| Bank | Branch | Account | Result |
-|---|---|---|---|
-| ABSA | 632005 | any | pass |
-| Standard Bank | 051001 | 10004301100 | pass |
-| FNB | 250655 | 62001872440 | pass |
-| anything else | — | — | fail |
+**Complete response fields:** `webhook_delivered`, `webhook_target_url`, `company_uuid`.
 
 ## Webhook Delivery
 
-`WebhookDeliveryService` (`src/webhook-delivery/`) centralises all outbound webhook logic:
-- Builds auth headers (Basic, api-key, hmac) from `mockConfig` or per-call `auth_override`
-- Stores every attempt in `webhook_deliveries` table (success and failures)
-- Exposed via `/admin/data` under `webhook_deliveries` key
-- Replay any past delivery: `POST /admin/webhook/replay/:deliveryId`
+`WebhookDeliveryService` (`src/webhook-delivery/`):
 
-Automatic webhook delivery fires when a `notify_url` is present on the entity, or when `mockConfig.defaultNotifyUrl` is set via scenario:
+- Auth headers from `mockConfig` or `auth_override` (Basic, api-key, hmac)
+- Pino logging via `OutboundLogService` for outbound POSTs
+- HTTP interceptor logs inbound requests
+- All attempts stored in `webhook_deliveries` (success and failure)
 
 | Action | Event type |
-|---|---|
+|--------|------------|
 | `payments/submit` | `MANDATE_UPDATED` (PENDING) + `PAYMENT_STATUS` (RUNNING) |
 | `payments/status/:id/:status` | `PAYMENT_STATUS` |
+| `payments/:id/complete` | `PAYMENT_STATUS` (PAID) |
 | `mandates/debicheck/update/cancel` | `MANDATE_UPDATED` (CANCELLED) |
 | `checkout/:id/complete` | `CHECKOUT_COMPLETED` |
 | `checkout/:id/fail` | `CHECKOUT_COMPLETED` (FAILED) |
 | `checkout/:id/save-card` | `CHECKOUT_COMPLETED` (CARD_SAVED) |
 
+Payload includes `event_type` and `event_id` in the JSON body sent to the target.
+
+**jb-inner-api target (typical):** `POST http://localhost:3005/v1/webhook/kwik/<companyUuid>`
+
 ## Runtime Scenario Controls
 
-`POST /admin/scenario` updates flags without restart. `GET /admin/scenario` reads current state.
+`POST /admin/scenario` — no restart required.
 
 ```json
 {
   "authMode": "loose",
   "cdvFailUnknown": false,
   "avsFailUnknown": false,
-  "defaultNotifyUrl": "http://localhost:3006/webhook/kwik/<company-uuid>",
+  "defaultCompanyUuid": "<company-uuid>",
+  "defaultNotifyUrl": "http://localhost:3005/v1/webhook/kwik/{companyUuid}",
   "webhookAuthMode": "basic",
   "webhookAccessKey": "test_key",
-  "webhookAccessSecret": "test_secret"
+  "webhookAccessSecret": "test_secret",
+  "webhookHmacSecret": ""
 }
 ```
 
-`mockConfig` singleton (`src/common/mock-config.ts`) holds these overrides; falls back to env vars when not overridden at runtime.
+`mockConfig` (`src/common/mock-config.ts`) is a module singleton (not Nest injectable).
 
 ## Auth Modes
 
-Controlled by `MOCK_AUTH_MODE` env var or `mockConfig.authMode`:
-- **`loose`** (default) — any valid `key:secret` Basic header or `x-kwik-api-key` header accepted
-- **`strict`** — credentials must match `MOCK_ACCESS_KEY` / `MOCK_ACCESS_SECRET`
+`MOCK_AUTH_MODE` / `mockConfig.authMode`:
 
-Returns Kwik-like 401 on failure: `{ status: false, error_code: "001", error_message: "Invalid API key provided." }`
+- **`loose`** (default) — any valid Basic or `x-kwik-api-key`
+- **`strict`** — must match `MOCK_ACCESS_KEY` / `MOCK_ACCESS_SECRET`
+
+401: `{ status: false, error_code: "001", error_message: "Invalid API key provided." }`
+
+## CDV / AVS
+
+**CDV:** `CDV_FAIL_UNKNOWN=true` or scenario `cdvFailUnknown` — only known test accounts pass (see README / prior docs for branch codes).
+
+**AVS:** `AVS_FAIL_UNKNOWN` / `avsFailUnknown` — same pattern.
+
+## Seed Data
+
+On startup + `POST /admin/seed` (idempotent):
+
+- Methods: `pam_debicheck_absa`, `pam_eft_absa`
+- Banks: ABSA, Standard, FNB, Nedbank
+- Customer: `cus_test_001`
+
+## Filtering
+
+**`GET /1.0/customers/list`:** `id`, `reference`, `email`, `customer_email`, `id_number`, `customer_id_number`, `contact_number`, `customer_status`
+
+**`GET /1.0/bank-accounts/list`:** `id`, `customers_id`, `bank_account_number`, `bank_name`, `bank_branch_code`, `reference`, `status`
 
 ## E2E Test Script
 
-Two modes:
-
 ```bash
-# Mock-only — no Jobix services required
 MOCK_ONLY=true ./scripts/test-jobix-kwik-e2e.sh
 
-# Full Jobix e2e — requires running jb-application-be, jb-inner-api, and a valid JWT
-JOBIX_AUTH_TOKEN=<bearer_token> \
+JOBIX_AUTH_TOKEN=<bearer> \
 JOBIX_CUSTOMER_UUID=<contact_uuid> \
 JOBIX_COMPANY_UUID=<company_uuid> \
 ./scripts/test-jobix-kwik-e2e.sh
 ```
 
-**Required env vars for full e2e** (script exits immediately if missing unless `MOCK_ONLY=true`):
-- `JOBIX_AUTH_TOKEN` — Bearer token for `jb-application-be`
-- `JOBIX_CUSTOMER_UUID` — UUID of an existing contact/customer in jb-contacts-service
-- `JOBIX_COMPANY_UUID` — UUID of the company for inner-api webhook targeting
+**Full e2e requires:** `JOBIX_AUTH_TOKEN`, `JOBIX_CUSTOMER_UUID`, `JOBIX_COMPANY_UUID` (unless `MOCK_ONLY=true`).
 
-**Optional env vars**: `JOBIX_BFF_URL` (default `http://localhost:3000`), `JOBIX_INNER_API_URL` (default `http://localhost:3006`), `KWIK_MOCK_URL` (default `http://localhost:3099`), `KWIK_ACCESS_KEY`, `KWIK_ACCESS_SECRET`.
-
-**Full e2e flow**: reset → verify mock → verify BFF `/profile` → all 7 BFF Kwik actions via `POST /kwik/test-action` → checkout page → complete checkout (unauthenticated) → submit payment → mark PAID → cancel mandate → replay webhook → scenario controls → admin reset.
-
-**Mock-only flow**: same as above but calls mock endpoints directly; BFF actions are skipped. Does not print "ALL PASSED" — prints "MOCK CHECKS PASSED" instead.
-
-## Manual Webhook Fire
-
-```bash
-curl -X POST http://localhost:3099/admin/webhook/fire \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_url": "http://localhost:3006/webhook/kwik/<companyUuid>",
-    "event_type": "MANDATE_UPDATED",
-    "payload": {
-      "kwik_mandate_id": "man_abc123",
-      "kwik_customer_id": "cus_test_001",
-      "mandate_status": "ACCEPTED",
-      "status": "ACCEPTED",
-      "amount": "500.00"
-    },
-    "auth": { "access_key": "test_key", "access_secret": "test_secret" }
-  }'
-```
+**Optional:** `JOBIX_BFF_URL`, `JOBIX_INNER_API_URL`, `KWIK_MOCK_URL`, `KWIK_ACCESS_KEY`, `KWIK_ACCESS_SECRET`.
 
 ## Tests
 
 ```bash
-pnpm test          # 143 tests across 12 spec files
-pnpm test:cov      # with coverage
+pnpm test
 ```
 
-Key test files:
-- `test/webhook-delivery.service.spec.ts` — deliver/replay/auth modes/event_id generation
-- `test/payments.service.spec.ts` — validation + webhook delivery on submit/status change
-- `test/checkout.service.spec.ts` — complete/fail/save-card + webhook delivery
-- `test/mandates.service.spec.ts` — cancel cascade + webhook delivery
-- `test/admin.service.spec.ts` — fireWebhook/replayWebhook/getAllData/resetData/scenario
-- `test/cdv.service.spec.ts` — CDV_FAIL_UNKNOWN via env and mockConfig; string/number branch code
-- `test/bank-accounts.service.spec.ts` — create/update logic, NotFoundException on unknown ID
+Notable specs:
+
+- `test/resolve-payment-notify-url.util.spec.ts` — URL template + company UUID fallback
+- `test/payments.service.spec.ts` — submit, status, complete, webhooks
+- `test/webhook-delivery.service.spec.ts` — deliver, replay, auth modes
+- `test/checkout.service.spec.ts`, `test/mandates.service.spec.ts`
+- `test/admin.service.spec.ts` — admin + scenario (mock `PaymentsService`)
 
 ## Environment Variables
 
 | Variable | Default | Description |
-|---|---|---|
+|----------|---------|-------------|
 | `PORT` | `3099` | HTTP port |
-| `MOCK_BASE_URL` | `http://localhost:3099` | Used to build `page_url` in checkout sessions |
+| `LOG_LEVEL` | `info` | Pino level |
+| `MOCK_BASE_URL` | `http://localhost:3099` | Checkout `page_url` base |
 | `MOCK_AUTH_MODE` | `loose` | `loose` or `strict` |
-| `MOCK_ACCESS_KEY` | — | Required credential in strict mode |
-| `MOCK_ACCESS_SECRET` | — | Required credential in strict mode |
-| `CDV_FAIL_UNKNOWN` | `false` | If `true`, only known test accounts pass CDV |
-| `AVS_FAIL_UNKNOWN` | `false` | If `true`, only known accounts pass AVS |
-| `MOCK_DEFAULT_NOTIFY_URL` | — | Default webhook target for all payment events |
-| `MOCK_WEBHOOK_AUTH_MODE` | `basic` | `basic`, `api-key`, `hmac`, or `none` |
-| `MOCK_WEBHOOK_ACCESS_KEY` | `test_key` | Webhook outbound auth key |
-| `MOCK_WEBHOOK_ACCESS_SECRET` | `test_secret` | Webhook outbound auth secret |
-| `MOCK_WEBHOOK_HMAC_SECRET` | — | HMAC signing secret (when mode=hmac) |
+| `MOCK_ACCESS_KEY` / `MOCK_ACCESS_SECRET` | — | Strict mode credentials |
+| `CDV_FAIL_UNKNOWN` | `false` | Restrict CDV passes |
+| `AVS_FAIL_UNKNOWN` | `false` | Restrict AVS passes |
+| `MOCK_DEFAULT_COMPANY_UUID` | — | Fallback for `{companyUuid}` on payments |
+| `MOCK_DEFAULT_NOTIFY_URL` | built-in template | Override notify URL template |
+| `MOCK_WEBHOOK_AUTH_MODE` | `basic` | `basic`, `api-key`, `hmac`, `none` |
+| `MOCK_WEBHOOK_ACCESS_KEY` | `test_key` | Outbound webhook key |
+| `MOCK_WEBHOOK_ACCESS_SECRET` | `test_secret` | Outbound webhook secret |
+| `MOCK_WEBHOOK_HMAC_SECRET` | — | HMAC secret when mode=hmac |
+
+Built-in template when `MOCK_DEFAULT_NOTIFY_URL` unset:
+
+`http://localhost:3005/v1/webhook/kwik/{companyUuid}`
 
 ## Key Conventions
 
-- **Error format** matches real Kwik API: `{ status: false, error_code: "001"|"002"|"007", error_message: "..." }`
-- **Success format**: `{ status: true, <resource>: [...] }` for lists, `{ status: true, <resource>: {...} }` for singles
-- **IDs**: `{prefix}_{16 hex chars}` via `genId()` in `src/common/gen-id.util.ts`
-- **Checkout UI routes** are excluded from the `/1.0/` global prefix via `setGlobalPrefix` exclude rules in `main.ts`
-- **mockConfig** (`src/common/mock-config.ts`) is a module-level singleton — not a NestJS injectable. Guards and services read it directly without DI wiring.
-- **WebhookDeliveryModule** is non-global; explicitly imported by checkout, payments, mandates, and admin modules
-- **bank_branch_code** normalisation: accepts `string | number` input, always stored and returned as `string`
-- **Admin reset**: default preserves `cus_test_001` via `customerRepo.delete({ id: Not('cus_test_001') })`; `?all=true` wipes everything and re-seeds
+- **Errors:** `{ status: false, error_code: "001"|"002"|"007", error_message: "..." }`
+- **Success:** `{ status: true, <resource>: ... }`
+- **IDs:** `{prefix}_{16 hex}` via `genId()`
+- **Checkout routes** excluded from `/1.0` in `main.ts`
+- **mockConfig** — module singleton; guards/services import directly
+- **WebhookDeliveryModule** — imported by checkout, payments, mandates, admin
+- **bank_branch_code** — accepts string or number; stored/returned as string
+- **Admin reset** — preserves `cus_test_001` unless `?all=true`
+- **PaymentsModule** exports `PaymentsService` for `AdminModule`

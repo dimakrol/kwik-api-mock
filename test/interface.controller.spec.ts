@@ -47,6 +47,19 @@ describe('InterfaceController', () => {
     expect(res.text).toContain('id="record-table"');
   });
 
+  it('GET /interface/records/bank_accounts should return SPA HTML after reload', async () => {
+    const res = await request(app.getHttpServer()).get('/interface/records/bank_accounts');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.text).toContain('id="record-table"');
+  });
+
+  it('GET /interface/webhooks should return SPA HTML for deep link', async () => {
+    const res = await request(app.getHttpServer()).get('/interface/webhooks');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('id="webhook-table"');
+  });
+
   it('GET /interface/assets/styles.css should serve CSS', async () => {
     const res = await request(app.getHttpServer()).get('/interface/assets/styles.css');
     expect(res.status).toBe(200);

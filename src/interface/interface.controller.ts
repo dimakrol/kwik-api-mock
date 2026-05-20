@@ -39,15 +39,18 @@ export class InterfaceController {
   }
 
   @Get('interface')
-  @Get('interface/overview')
-  @Get('interface/webhooks')
-  @Get('interface/sender')
-  @Get('interface/scenario')
-  @Get('interface/raw')
-  @Get('interface/records')
-  @Get('interface/records/:recordType')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  getInterface(): string {
+  getInterfaceRoot(): string {
+    return readStatic('index.html');
+  }
+
+  /** SPA fallback — Nest registers only the first path when stacking multiple @Get on one handler. */
+  @Get('interface/:path(.*)')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  getInterfaceSpa(@Param('path') path: string): string {
+    if (path.startsWith('assets/')) {
+      throw new NotFoundException(`Unknown asset ${path}`);
+    }
     return readStatic('index.html');
   }
 }

@@ -26,9 +26,20 @@ Default API credentials (loose mode): any `key:secret` in Basic auth, or set str
 
 ## Web dashboard
 
-Open **http://localhost:3099/interface** to:
+Open **http://localhost:3099/interface** (redirects to `/interface/overview`). Routes use the browser history API:
 
-- Browse seeded and created records (customers, payments, mandates, …)
+| Path | Screen |
+|------|--------|
+| `/interface/overview` | Counters and reset actions |
+| `/interface/records/:type` | Browse DB tables (`payments`, `customers`, …) |
+| `/interface/webhooks` | Delivery log |
+| `/interface/sender` | Manual webhook fire |
+| `/interface/scenario` | Runtime flags |
+| `/interface/raw` | Full JSON dump |
+
+Features:
+
+- Browse and **delete** individual rows (button per record; calls `DELETE /admin/records/:resource/:id`)
 - Inspect **webhook delivery** history (success and failures)
 - Fire or replay webhooks manually
 - Tune **scenario** flags (auth, CDV, default company UUID, webhook URL template)
@@ -105,7 +116,12 @@ Response includes `webhook_delivered` and `webhook_target_url`.
 
 ### Admin — `/admin/*`, no auth
 
-Data dump, reset, seed, scenario flags, manual webhook fire/replay, payment complete. See Swagger or `CLAUDE.md` for the full list.
+Data dump, reset, seed, scenario flags, manual webhook fire/replay, payment complete, **per-record delete**. See Swagger or `CLAUDE.md` for the full list.
+
+```bash
+# Delete one payment (cascades linked mandate)
+curl -X DELETE http://localhost:3099/admin/records/payments/pay_xxx
+```
 
 ## Environment variables
 

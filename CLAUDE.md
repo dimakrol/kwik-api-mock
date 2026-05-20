@@ -2,6 +2,38 @@
 
 NestJS + SQLite mock server for the [Kwik](https://kwik.co.za) payment API. Used for local integration testing of `jb-application-be`, `jb-flow-engine`, and `jb-inner-api` without hitting real Kwik staging.
 
+## Real Kwik Contract Is Source of Truth
+
+This mock must follow the real Kwik API behavior for every implemented route. Do not add or change request/response shapes only to satisfy existing Jobix flows if that would diverge from real Kwik. Instead, update the Jobix Kwik integration code to use the real Kwik contract and keep the mock aligned with that contract.
+
+Primary documentation: https://docs.kwik.co.za/overview
+
+When implementing or changing Kwik behavior:
+
+- Check the official docs first, especially path, auth, request body, response body, status values, webhook payloads, and webhook headers.
+- Implement only the Kwik API surface that Jobix currently needs.
+- Prefer documented field names such as `customer_id`, `bank_account_id`, `payments`, `payments_id`, `result`, `records`, `webhook_event`, `type`, and `results`.
+- Do not introduce mock-only field names as the primary contract. Backward-compatible aliases may be accepted only when they do not change the documented response and do not hide a Jobix-side contract bug.
+- If real Kwik and local PDF/docs conflict, verify against the official docs and document the decision in the relevant code/test.
+
+Implemented and required Kwik API scope for Jobix:
+
+| Area | Implemented routes/features | Needed by |
+|------|-----------------------------|-----------|
+| Auth | Basic auth, loose/strict mock modes | All Kwik API calls |
+| Payment methods | `GET /1.0/payment-methods` | Flow node configuration/testing |
+| Lookups | `GET /1.0/lookups/:type[/:payment_methods_id]` | Bank/payment method options |
+| CDV | `POST /1.0/cdv` with `records` | Bank details validation before DebiCheck |
+| AVS-R | `POST /1.0/avs-r` with `records: [{ customer, bank_account }]` | Account ownership verification |
+| Customers | `GET /1.0/customers/list`, `POST /1.0/customers/create` | Kwik customer lookup/create |
+| Bank accounts | `GET /1.0/bank-accounts/list`, `POST /1.0/bank-accounts/create`, `POST /1.0/bank-accounts/update` | Bank account lookup/create/update |
+| Checkout | `POST /1.0/checkout/page`, checkout HTML test UI | Card/payment-link path |
+| Payments | `POST /1.0/payments/submit`, `POST /1.0/payments/status/:paymentsID/:statusEnum` | DebiCheck/payment scheduling and status changes |
+| Mandates | `POST /1.0/mandates/debicheck/update/cancel` | Stop/cancel collection flows |
+| Webhooks | Documented `id`, `type`, `status`, `results`, `webhook_event`, `created_at` body plus `X-Signature`, `X-Timestamp`, `User-Agent` headers | `jb-inner-api` webhook ingestion |
+
+Not currently implemented because Jobix does not need them yet: cards, orders, payouts, transactions, SDO, and the full mandate lifecycle endpoints beyond DebiCheck cancel.
+
 ## Commands
 
 ```bash
@@ -74,11 +106,11 @@ Requires `Authorization: Basic <base64(key:secret)>` or `x-kwik-api-key` (`MOCK_
 | GET/POST | `/1.0/bank-accounts/list`, `create`, `update` | Bank accounts |
 | POST | `/1.0/checkout/page` | Checkout session + `page_url` |
 | POST | `/1.0/payments/submit` | Payment + mandate; optional webhooks |
-| POST | `/1.0/payments/:paymentsId/complete` | PAID + mandate ACTIVE + `PAYMENT_STATUS` webhook |
+| POST | `/1.0/payments/:paymentsId/complete` | Test helper: COMPLETED + mandate ACTIVE + `PAYMENT_UPDATED` webhook |
 | POST | `/1.0/payments/status/:id/:status` | Status update + webhook |
 | POST | `/1.0/mandates/debicheck/update/cancel` | Cancel mandate; stop payment; webhook |
 
-**`payments/submit` body aliases:** `notify_url`, `webhook_url`, `callback_url`; **`company_uuid`** stored on payment for webhook URL resolution.
+**`payments/submit`:** primary body shape is the documented `{ batch_reference, payments: [...] }`. Legacy flat aliases are accepted only as compatibility input and must not be used as the primary response contract.
 
 **`payments/complete` body (optional):** `{ "company_uuid": "..." }` — persisted on payment if missing, then webhook fired.
 
@@ -123,7 +155,7 @@ Static assets: `src/interface/static/` — served at `/` and `/interface/*` (exc
 | `BankAccountEntity` | `bank_accounts` | `bac_` | API-created |
 | `PaymentEntity` | `payments` | `pay_` | `notify_url`, **`company_uuid`**, `status` |
 | `MandateEntity` | `mandates` | `man_` | Linked to payment |
-| `CheckoutSessionEntity` | `checkout_sessions` | `cho_` | `notify_url`, `card_id` |
+| `CheckoutSessionEntity` | `checkout_sessions` | `chk_` | `notify_url`, `card_id` |
 | `WebhookDeliveryEntity` | `webhook_deliveries` | `wdl_` | Every outbound attempt |
 
 ## Payment webhook URL resolution
@@ -149,17 +181,17 @@ Used by: `payments/submit`, `payments/status`, `payments/complete`.
 - HTTP interceptor logs inbound requests
 - All attempts stored in `webhook_deliveries` (success and failure)
 
-| Action | Event type |
+| Action | Webhook event |
 |--------|------------|
-| `payments/submit` | `MANDATE_UPDATED` (PENDING) + `PAYMENT_STATUS` (RUNNING) |
-| `payments/status/:id/:status` | `PAYMENT_STATUS` |
-| `payments/:id/complete` | `PAYMENT_STATUS` (PAID) |
+| `payments/submit` | `MANDATE_UPDATED` (PENDING) + `PAYMENT_UPDATED` (RUNNING) |
+| `payments/status/:id/:status` | `PAYMENT_UPDATED` |
+| `payments/:id/complete` | `PAYMENT_UPDATED` (COMPLETED) |
 | `mandates/debicheck/update/cancel` | `MANDATE_UPDATED` (CANCELLED) |
 | `checkout/:id/complete` | `CHECKOUT_COMPLETED` |
-| `checkout/:id/fail` | `CHECKOUT_COMPLETED` (FAILED) |
+| `checkout/:id/fail` | `CHECKOUT_FAILED` |
 | `checkout/:id/save-card` | `CHECKOUT_COMPLETED` (CARD_SAVED) |
 
-Payload includes `event_type` and `event_id` in the JSON body sent to the target.
+Payload follows the documented webhook shape: `id`, `type`, `status`, `results`, `webhook_event`, `created_at`.
 
 **jb-inner-api target (typical):** `POST http://localhost:3005/v1/webhook/kwik/<companyUuid>`
 
@@ -208,9 +240,9 @@ On startup + `POST /admin/seed` (idempotent):
 
 ## Filtering
 
-**`GET /1.0/customers/list`:** `id`, `reference`, `email`, `customer_email`, `id_number`, `customer_id_number`, `contact_number`, `customer_status`
+**`GET /1.0/customers/list`:** `customer_id`, `customer_reference`, `customer_email`, `customer_id_number`, `customer_contact_number`, `customer_status`
 
-**`GET /1.0/bank-accounts/list`:** `id`, `customers_id`, `bank_account_number`, `bank_name`, `bank_branch_code`, `reference`, `status`
+**`GET /1.0/bank-accounts/list`:** `id`, `customer_id`, `bank_account_status`
 
 ## E2E Test Script
 

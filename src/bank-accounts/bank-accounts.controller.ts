@@ -4,25 +4,33 @@ import { BasicAuthGuard } from '../common/basic-auth.guard';
 import { BankAccountsService } from './bank-accounts.service';
 
 const REQUIRED_BANK_ACCOUNT_FIELDS = [
-  'customers_id', 'bank_account_holder_name', 'bank_account_number', 'bank_account_type',
-  'bank_name', 'bank_branch_code', 'reference',
+  'customer_id', 'bank_account_holder_name', 'bank_account_number', 'bank_account_type',
+  'bank_name', 'bank_branch_code',
 ];
 
 const bankAccountExample = {
-  id: 'bac_xxx',
-  customers_id: 'cus_xxx',
+  id: 'ban_xxx',
+  customer_id: 'cus_xxx',
   bank_account_holder_name: 'John Doe',
   bank_account_number: '10004291601',
   bank_account_type: 'CHEQUE_OR_CURRENT',
   bank_name: 'ABSA_BANK_LIMITED',
   bank_branch_code: '632005',
-  reference: 'REF-001',
-  status: 'ACTIVE',
+  bank_account_status: 'ACTIVE',
   created_at: '2026-01-01T00:00:00.000Z',
 };
 
 const unauthorizedSchema = { example: { status: false, error_code: '001', error_message: 'Invalid API key provided.' } };
 const validationErrorSchema = { example: { status: false, error_code: '002', error_message: 'Readable validation message' } };
+
+function serializeBankAccount(record: Record<string, unknown>): Record<string, unknown> {
+  const { customers_id, reference: _reference, status, ...rest } = record;
+  return {
+    ...rest,
+    customer_id: customers_id,
+    bank_account_status: status,
+  };
+}
 
 @ApiTags('bank-accounts')
 @ApiBasicAuth()
@@ -34,27 +42,25 @@ export class BankAccountsController {
   @Get('list')
   @ApiOperation({ summary: 'List bank accounts with optional exact-match filters' })
   @ApiQuery({ name: 'id', required: false })
-  @ApiQuery({ name: 'customers_id', required: false })
+  @ApiQuery({ name: 'customer_id', required: false })
   @ApiQuery({ name: 'bank_account_number', required: false })
   @ApiQuery({ name: 'bank_name', required: false })
   @ApiQuery({ name: 'bank_branch_code', required: false })
-  @ApiQuery({ name: 'reference', required: false })
-  @ApiQuery({ name: 'status', required: false })
-  @ApiResponse({ status: 200, schema: { example: { status: true, bank_accounts: [bankAccountExample] } } })
+  @ApiQuery({ name: 'bank_account_status', required: false })
+  @ApiResponse({ status: 200, schema: { example: { status: true, results: [bankAccountExample] } } })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
   async list(
     @Query('id') id?: string,
-    @Query('customers_id') customers_id?: string,
+    @Query('customer_id') customer_id?: string,
     @Query('bank_account_number') bank_account_number?: string,
     @Query('bank_name') bank_name?: string,
     @Query('bank_branch_code') bank_branch_code?: string,
-    @Query('reference') reference?: string,
-    @Query('status') status?: string,
-  ): Promise<{ status: boolean; bank_accounts: object[] }> {
-    const bank_accounts = await this.service.findAll({
-      id, customers_id, bank_account_number, bank_name, bank_branch_code, reference, status,
+    @Query('bank_account_status') bank_account_status?: string,
+  ): Promise<{ status: boolean; results: object[] }> {
+    const bankAccounts = await this.service.findAll({
+      id, customer_id, bank_account_number, bank_name, bank_branch_code, bank_account_status,
     });
-    return { status: true, bank_accounts };
+    return { status: true, results: bankAccounts.map((record) => serializeBankAccount(record as never)) };
   }
 
   @Post('create')
@@ -63,21 +69,20 @@ export class BankAccountsController {
     schema: {
       example: {
         records: [{
-          customers_id: 'cus_xxx',
+          customer_id: 'cus_xxx',
           bank_account_holder_name: 'John Doe',
           bank_account_number: '10004291601',
           bank_account_type: 'CHEQUE_OR_CURRENT',
           bank_name: 'ABSA_BANK_LIMITED',
           bank_branch_code: '632005',
-          reference: 'REF-001',
         }],
       },
     },
   })
-  @ApiResponse({ status: 200, schema: { example: { status: true, bank_accounts: [bankAccountExample] } } })
+  @ApiResponse({ status: 200, schema: { example: { status: true, results: [bankAccountExample] } } })
   @ApiResponse({ status: 400, description: 'Validation error', schema: validationErrorSchema })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
-  async create(@Body() body: { records: Record<string, string>[] }): Promise<{ status: boolean; bank_accounts: object[] }> {
+  async create(@Body() body: { records: Record<string, string>[] }): Promise<{ status: boolean; results: object[] }> {
     if (!body?.records || !Array.isArray(body.records) || body.records.length === 0) {
       throw new BadRequestException({ status: false, error_code: '002', error_message: 'records must be a non-empty array' });
     }
@@ -88,24 +93,24 @@ export class BankAccountsController {
         }
       }
     }
-    const bank_accounts = await this.service.createMany(body.records as never);
-    return { status: true, bank_accounts };
+    const bankAccounts = await this.service.createMany(body.records as never);
+    return { status: true, results: bankAccounts.map((record) => serializeBankAccount(record as never)) };
   }
 
   @Post('update')
   @ApiOperation({ summary: 'Update one or more bank accounts' })
   @ApiBody({
     schema: {
-      example: { records: [{ id: 'bac_xxx', status: 'DISABLED' }] },
+      example: { records: [{ id: 'ban_xxx', bank_account_status: 'DISABLED' }] },
     },
   })
-  @ApiResponse({ status: 200, schema: { example: { status: true, bank_accounts: [bankAccountExample] } } })
+  @ApiResponse({ status: 200, schema: { example: { status: true, results: [bankAccountExample] } } })
   @ApiResponse({ status: 400, description: 'Validation error', schema: validationErrorSchema })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
   @ApiResponse({ status: 404, description: 'Bank account not found' })
   async update(
     @Body() body: { records: Array<{ id: string; [key: string]: unknown }> },
-  ): Promise<{ status: boolean; bank_accounts: object[] }> {
+  ): Promise<{ status: boolean; results: object[] }> {
     if (!body?.records || !Array.isArray(body.records) || body.records.length === 0) {
       throw new BadRequestException({ status: false, error_code: '002', error_message: 'records must be a non-empty array' });
     }
@@ -114,7 +119,12 @@ export class BankAccountsController {
         throw new BadRequestException({ status: false, error_code: '002', error_message: 'Each record must include "id"' });
       }
     }
-    const bank_accounts = await this.service.updateMany(body.records as never);
-    return { status: true, bank_accounts };
+    const bankAccounts = await this.service.updateMany(
+      body.records.map(({ bank_account_status, ...record }) => ({
+        ...record,
+        ...(bank_account_status ? { status: bank_account_status } : {}),
+      })) as never,
+    );
+    return { status: true, results: bankAccounts.map((record) => serializeBankAccount(record as never)) };
   }
 }

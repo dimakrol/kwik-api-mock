@@ -5,14 +5,14 @@ import { BankAccountEntity } from '../database/entities/bank-account.entity';
 import { genId } from '../common/gen-id.util';
 
 interface CreateBankAccountDto {
-  customers_id: string;
+  customer_id: string;
   bank_account_holder_name: string;
   bank_account_number: string;
   bank_account_type: string;
   bank_name: string;
   bank_branch_code: string;
-  reference: string;
-  status?: string;
+  reference?: string;
+  bank_account_status?: string;
 }
 
 interface UpdateBankAccountDto {
@@ -28,12 +28,11 @@ interface UpdateBankAccountDto {
 
 export interface BankAccountFilters {
   id?: string;
-  customers_id?: string;
+  customer_id?: string;
   bank_account_number?: string;
   bank_name?: string;
   bank_branch_code?: string;
-  reference?: string;
-  status?: string;
+  bank_account_status?: string;
 }
 
 @Injectable()
@@ -46,12 +45,11 @@ export class BankAccountsService {
   async findAll(filters: BankAccountFilters = {}): Promise<BankAccountEntity[]> {
     const where: Partial<BankAccountEntity> = {};
     if (filters.id) where.id = filters.id;
-    if (filters.customers_id) where.customers_id = filters.customers_id;
+    if (filters.customer_id) where.customers_id = filters.customer_id;
     if (filters.bank_account_number) where.bank_account_number = filters.bank_account_number;
     if (filters.bank_name) where.bank_name = filters.bank_name;
     if (filters.bank_branch_code) where.bank_branch_code = String(filters.bank_branch_code);
-    if (filters.reference) where.reference = filters.reference;
-    if (filters.status) where.status = filters.status;
+    if (filters.bank_account_status) where.status = filters.bank_account_status;
     return this.repo.find({ where });
   }
 
@@ -59,15 +57,15 @@ export class BankAccountsService {
     const created: BankAccountEntity[] = [];
     for (const dto of records) {
       const entity = this.repo.create({
-        id: genId('bac'),
-        customers_id: dto.customers_id,
+        id: genId('ban'),
+        customers_id: dto.customer_id,
         bank_account_holder_name: dto.bank_account_holder_name,
         bank_account_number: dto.bank_account_number,
         bank_account_type: dto.bank_account_type,
         bank_name: dto.bank_name,
         bank_branch_code: String(dto.bank_branch_code),
-        reference: dto.reference,
-        status: dto.status ?? 'ACTIVE',
+        reference: dto.reference ?? '',
+        status: dto.bank_account_status ?? 'ACTIVE',
       });
       await this.repo.save(entity);
       created.push(entity);

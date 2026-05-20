@@ -41,7 +41,7 @@ export class CustomersController {
   @ApiQuery({ name: 'customer_id_number', required: false })
   @ApiQuery({ name: 'contact_number', required: false })
   @ApiQuery({ name: 'customer_status', required: false })
-  @ApiResponse({ status: 200, schema: { example: { status: true, customers: [customerExample] } } })
+  @ApiResponse({ status: 200, schema: { example: { status: true, results: [customerExample] } } })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
   async list(
     @Query('id') id?: string,
@@ -52,11 +52,11 @@ export class CustomersController {
     @Query('customer_id_number') customer_id_number?: string,
     @Query('contact_number') contact_number?: string,
     @Query('customer_status') customer_status?: string,
-  ): Promise<{ status: boolean; customers: object[] }> {
-    const customers = await this.service.findAll({
+  ): Promise<{ status: boolean; results: object[] }> {
+    const results = await this.service.findAll({
       id, reference, email, customer_email, id_number, customer_id_number, contact_number, customer_status,
     });
-    return { status: true, customers };
+    return { status: true, results };
   }
 
   @Post('create')
@@ -77,10 +77,10 @@ export class CustomersController {
       },
     },
   })
-  @ApiResponse({ status: 200, schema: { example: { status: true, customers: [customerExample] } } })
+  @ApiResponse({ status: 200, schema: { example: { status: true, results: [customerExample] } } })
   @ApiResponse({ status: 400, description: 'Validation error', schema: validationErrorSchema })
   @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
-  async create(@Body() body: { records: Record<string, string>[] }): Promise<{ status: boolean; customers: object[] }> {
+  async create(@Body() body: { records: Record<string, string>[] }): Promise<{ status: boolean; results: object[] }> {
     if (!body?.records || !Array.isArray(body.records) || body.records.length === 0) {
       throw new BadRequestException({ status: false, error_code: '002', error_message: 'records must be a non-empty array' });
     }
@@ -91,7 +91,7 @@ export class CustomersController {
         }
       }
     }
-    const customers = await this.service.createMany(body.records as never);
-    return { status: true, customers };
+    const results = await this.service.createMany(body.records as never);
+    return { status: true, results };
   }
 }

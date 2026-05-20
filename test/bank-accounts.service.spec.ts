@@ -32,7 +32,7 @@ describe('BankAccountsService', () => {
   });
 
   const baseDto = {
-    customers_id: 'cus_abc',
+    customer_id: 'cus_abc',
     bank_account_holder_name: 'John Doe',
     bank_account_number: '12345678',
     bank_account_type: 'CHEQUE',
@@ -49,9 +49,9 @@ describe('BankAccountsService', () => {
       expect(result).toBe(entities);
     });
 
-    it('should pass customers_id filter to repo', async () => {
+    it('should pass customer_id filter to repo', async () => {
       mockRepo.find.mockResolvedValue([]);
-      await service.findAll({ customers_id: 'cus_abc' });
+      await service.findAll({ customer_id: 'cus_abc' });
       expect(mockRepo.find).toHaveBeenCalledWith({ where: expect.objectContaining({ customers_id: 'cus_abc' }) });
     });
 
@@ -63,10 +63,10 @@ describe('BankAccountsService', () => {
   });
 
   describe('createMany()', () => {
-    it('should generate IDs starting with "bac_"', async () => {
+    it('should generate IDs starting with "ban_"', async () => {
       await service.createMany([baseDto]);
       const arg = mockRepo.create.mock.calls[0][0];
-      expect(arg.id).toMatch(/^bac_/);
+      expect(arg.id).toMatch(/^ban_/);
     });
 
     it('should set default status to "ACTIVE" when not provided', async () => {
@@ -76,7 +76,7 @@ describe('BankAccountsService', () => {
     });
 
     it('should use provided status when given', async () => {
-      await service.createMany([{ ...baseDto, status: 'SUSPENDED' }]);
+      await service.createMany([{ ...baseDto, bank_account_status: 'SUSPENDED' }]);
       const arg = mockRepo.create.mock.calls[0][0];
       expect(arg.status).toBe('SUSPENDED');
     });

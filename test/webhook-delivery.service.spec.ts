@@ -1,13 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
-import axios from 'axios';
 import { WebhookDeliveryService } from '../src/webhook-delivery/webhook-delivery.service';
 import { WebhookDeliveryEntity } from '../src/database/entities/webhook-delivery.entity';
 import { mockConfig } from '../src/common/mock-config';
+import { OutboundLogService } from '../src/common/logging/outbound-log.service';
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+const outboundLog = {
+  post: jest.fn(),
+};
 
 const mockRepo = {
   create: jest.fn().mockImplementation((dto) => dto),
@@ -26,10 +27,13 @@ describe('WebhookDeliveryService', () => {
     mockRepo.create.mockImplementation((dto) => dto);
     mockRepo.save.mockImplementation((e) => Promise.resolve(e));
 
+    outboundLog.post.mockResolvedValue({ status: 200, data: {} });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhookDeliveryService,
         { provide: getRepositoryToken(WebhookDeliveryEntity), useValue: mockRepo },
+        { provide: OutboundLogService, useValue: outboundLog },
       ],
     }).compile();
 
@@ -42,7 +46,7 @@ describe('WebhookDeliveryService', () => {
 
   describe('deliver()', () => {
     it('should generate event_id starting with "evt_" when not provided', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({
         event_type: 'PAYMENT_STATUS',
@@ -55,7 +59,7 @@ describe('WebhookDeliveryService', () => {
     });
 
     it('should use provided event_id when given', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({
         event_type: 'PAYMENT_STATUS',
@@ -69,7 +73,7 @@ describe('WebhookDeliveryService', () => {
     });
 
     it('should store delivery record with success=true on 200 response', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: { ok: true } });
+      outboundLog.post.mockResolvedValue({ status: 200, data: { ok: true } });
 
       await service.deliver({
         event_type: 'MANDATE_UPDATED',
@@ -83,7 +87,7 @@ describe('WebhookDeliveryService', () => {
     });
 
     it('should store delivery record with success=false on non-2xx response', async () => {
-      mockedAxios.post.mockRejectedValue({ response: { status: 500, data: 'Error' }, message: 'Request failed' });
+      outboundLog.post.mockRejectedValue({ response: { status: 500, data: 'Error' }, message: 'Request failed' });
 
       await service.deliver({
         event_type: 'PAYMENT_STATUS',
@@ -98,7 +102,7 @@ describe('WebhookDeliveryService', () => {
     });
 
     it('should merge event_type and event_id into the POST body', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({
         event_type: 'CHECKOUT_COMPLETED',
@@ -107,38 +111,38 @@ describe('WebhookDeliveryService', () => {
         event_id: 'evt_123',
       });
 
-      const postBody = mockedAxios.post.mock.calls[0][1] as Record<string, unknown>;
+      const postBody = outboundLog.post.mock.calls[0][1] as Record<string, unknown>;
       expect(postBody.event_type).toBe('CHECKOUT_COMPLETED');
       expect(postBody.event_id).toBe('evt_123');
       expect(postBody.checkout_id).toBe('cho_1');
     });
 
     it('should add Basic Auth header in basic webhookAuthMode', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       mockConfig.webhookAuthMode = 'basic';
       mockConfig.webhookAccessKey = 'mykey';
       mockConfig.webhookAccessSecret = 'mysecret';
 
       await service.deliver({ event_type: 'PAYMENT_STATUS', target_url: 'https://hook.example.com', payload: {} });
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       const expected = `Basic ${Buffer.from('mykey:mysecret').toString('base64')}`;
       expect(headers['Authorization']).toBe(expected);
     });
 
     it('should add x-kwik-api-key header in api-key webhookAuthMode', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       mockConfig.webhookAuthMode = 'api-key';
       mockConfig.webhookAccessKey = 'apikey123';
 
       await service.deliver({ event_type: 'PAYMENT_STATUS', target_url: 'https://hook.example.com', payload: {} });
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers['x-kwik-api-key']).toBe('apikey123');
     });
 
     it('should use auth_override when provided', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       mockConfig.webhookAuthMode = 'basic';
 
       await service.deliver({
@@ -148,13 +152,13 @@ describe('WebhookDeliveryService', () => {
         auth_override: { access_key: 'override_key', access_secret: 'override_secret' },
       });
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       const expected = `Basic ${Buffer.from('override_key:override_secret').toString('base64')}`;
       expect(headers['Authorization']).toBe(expected);
     });
 
     it('should use auth_override auth_mode for one delivery without mutating scenario', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       mockConfig.webhookAuthMode = 'basic';
 
       await service.deliver({
@@ -164,14 +168,14 @@ describe('WebhookDeliveryService', () => {
         auth_override: { auth_mode: 'api-key', access_key: 'single_send_key' },
       });
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers['x-kwik-api-key']).toBe('single_send_key');
       expect(headers['Authorization']).toBeUndefined();
       expect(mockConfig.webhookAuthMode).toBe('basic');
     });
 
     it('should use auth_override hmac_secret for hmac mode', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({
         event_type: 'PAYMENT_STATUS',
@@ -181,12 +185,12 @@ describe('WebhookDeliveryService', () => {
         auth_override: { auth_mode: 'hmac', hmac_secret: 'single-send-secret' },
       });
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers['x-kwik-signature']).toBeDefined();
     });
 
     it('should store delivery with id starting with "wdl_"', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
 
       await service.deliver({ event_type: 'PAYMENT_STATUS', target_url: 'https://hook.example.com', payload: {} });
 
@@ -202,7 +206,7 @@ describe('WebhookDeliveryService', () => {
     });
 
     it('should re-deliver using stored event_type, target_url, and event_id', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       const stored = {
         id: 'wdl_1',
         event_id: 'evt_abc',
@@ -215,11 +219,16 @@ describe('WebhookDeliveryService', () => {
 
       await service.replay('wdl_1');
 
-      expect(mockedAxios.post).toHaveBeenCalledWith('https://hook.example.com', expect.any(Object), expect.any(Object));
+      expect(outboundLog.post).toHaveBeenCalledWith(
+        'https://hook.example.com',
+        expect.any(Object),
+        expect.objectContaining({ headers: expect.any(Object) }),
+        expect.objectContaining({ service: 'webhook-delivery' }),
+      );
     });
 
     it('should replay with the original stored request headers', async () => {
-      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      outboundLog.post.mockResolvedValue({ status: 200, data: {} });
       mockConfig.webhookAuthMode = 'api-key';
       const originalAuth = `Basic ${Buffer.from('old_key:old_secret').toString('base64')}`;
       const stored = {
@@ -237,7 +246,7 @@ describe('WebhookDeliveryService', () => {
 
       await service.replay('wdl_1');
 
-      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      const headers = outboundLog.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers.Authorization).toBe(originalAuth);
       expect(headers['x-kwik-api-key']).toBeUndefined();
     });

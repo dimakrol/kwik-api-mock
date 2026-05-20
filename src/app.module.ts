@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AppLoggingModule } from './common/logging/logging.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentMethodEntity } from './database/entities/payment-method.entity';
 import { LookupEntity } from './database/entities/lookup.entity';
@@ -25,6 +26,7 @@ import { InterfaceModule } from './interface/interface.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    AppLoggingModule,
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: 'kwik-mock.sqlite',

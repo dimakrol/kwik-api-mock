@@ -1,11 +1,28 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RequestMethod } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { HttpLoggingInterceptor } from './common/logging/http-logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(Logger));
+
+  const requestLimit = '10mb';
+  app.useBodyParser('json', {
+    limit: requestLimit,
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: string }).rawBody = buf.toString('utf8');
+    },
+  });
+  app.useBodyParser('urlencoded', { extended: true, limit: requestLimit });
+
+  app.useGlobalInterceptors(app.get(HttpLoggingInterceptor));
 
   app.setGlobalPrefix('1.0', {
     exclude: [

@@ -1,11 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import axios from 'axios';
 import { createHmac } from 'node:crypto';
 import { WebhookDeliveryEntity } from '../database/entities/webhook-delivery.entity';
 import { genId } from '../common/gen-id.util';
 import { mockConfig } from '../common/mock-config';
+import { OutboundLogService } from '../common/logging/outbound-log.service';
 
 export interface DeliverWebhookOptions {
   event_type: string;
@@ -36,6 +36,7 @@ export class WebhookDeliveryService {
   constructor(
     @InjectRepository(WebhookDeliveryEntity)
     private readonly repo: Repository<WebhookDeliveryEntity>,
+    private readonly outboundLog: OutboundLogService,
   ) {}
 
   async deliver(opts: DeliverWebhookOptions): Promise<WebhookDeliveryEntity> {
@@ -90,7 +91,12 @@ export class WebhookDeliveryService {
     let error: string | null = null;
 
     try {
-      const response = await axios.post(opts.target_url, opts.requestBody, { headers: opts.headers });
+      const response = await this.outboundLog.post(
+        opts.target_url,
+        opts.requestBody,
+        { headers: opts.headers },
+        { service: 'webhook-delivery', operation: opts.event_type },
+      );
       response_status = response.status;
       response_body = JSON.stringify(response.data);
       success = response.status >= 200 && response.status < 300;

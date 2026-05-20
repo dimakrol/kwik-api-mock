@@ -10,6 +10,7 @@ import { MandateEntity } from '../database/entities/mandate.entity';
 import { CheckoutSessionEntity } from '../database/entities/checkout-session.entity';
 import { WebhookDeliveryService } from '../webhook-delivery/webhook-delivery.service';
 import { SeedService } from '../seed/seed.service';
+import { PaymentsService } from '../payments/payments.service';
 import { mockConfig } from '../common/mock-config';
 
 interface FireWebhookDto {
@@ -45,7 +46,16 @@ export class AdminService {
     private readonly checkoutRepo: Repository<CheckoutSessionEntity>,
     private readonly webhookDeliveryService: WebhookDeliveryService,
     private readonly seedService: SeedService,
+    private readonly paymentsService: PaymentsService,
   ) {}
+
+  async completePayment(
+    paymentsId: string,
+    options: { company_uuid?: string } = {},
+  ): Promise<object> {
+    const payments = await this.paymentsService.complete(paymentsId, options);
+    return { ok: true, payments };
+  }
 
   async fireWebhook(dto: FireWebhookDto): Promise<object> {
     try {
@@ -167,6 +177,9 @@ export class AdminService {
     if (typeof patch.cdvFailUnknown === 'boolean') mockConfig.cdvFailUnknown = patch.cdvFailUnknown;
     if (typeof patch.avsFailUnknown === 'boolean') mockConfig.avsFailUnknown = patch.avsFailUnknown;
     if ('defaultNotifyUrl' in patch) mockConfig.defaultNotifyUrl = (patch.defaultNotifyUrl as string | null) ?? null;
+    if ('defaultCompanyUuid' in patch) {
+      mockConfig.defaultCompanyUuid = (patch.defaultCompanyUuid as string | null) ?? null;
+    }
     if (typeof patch.webhookAuthMode === 'string') mockConfig.webhookAuthMode = patch.webhookAuthMode;
     if (typeof patch.webhookAccessKey === 'string') mockConfig.webhookAccessKey = patch.webhookAccessKey;
     if (typeof patch.webhookAccessSecret === 'string') mockConfig.webhookAccessSecret = patch.webhookAccessSecret;

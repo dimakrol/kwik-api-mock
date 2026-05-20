@@ -69,6 +69,17 @@ export class AdminController {
     return this.service.replayWebhook(deliveryId);
   }
 
+  @Post('payments/:paymentsId/complete')
+  @ApiOperation({ summary: 'Finish a payment (PAID) and deliver PAYMENT_STATUS webhook (no Basic auth)' })
+  @ApiParam({ name: 'paymentsId', description: 'Payment ID (pay_xxx)' })
+  @ApiResponse({ status: 200, schema: { example: { ok: true, payments: { id: 'pay_xxx', status: 'PAID' } } } })
+  async completePayment(
+    @Param('paymentsId') paymentsId: string,
+    @Body() body: { company_uuid?: string } = {},
+  ): Promise<object> {
+    return this.service.completePayment(paymentsId, body);
+  }
+
   @Get('data')
   @ApiOperation({ summary: 'Dump all database data and scenario config' })
   @ApiResponse({
@@ -157,7 +168,7 @@ export class AdminController {
         authMode: 'strict',
         cdvFailUnknown: true,
         avsFailUnknown: false,
-        defaultNotifyUrl: 'http://localhost:3001/webhook/kwik/my-company-uuid',
+        defaultNotifyUrl: 'http://localhost:3005/v1/webhook/kwik/{companyUuid}',
         webhookAuthMode: 'basic',
         webhookAccessKey: 'test_key',
         webhookAccessSecret: 'test_secret',

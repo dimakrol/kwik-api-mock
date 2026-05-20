@@ -13,6 +13,7 @@ export class PaymentEntity {
   @Column({ nullable: true }) date_start: string;
   @Column({ nullable: true }) date_end: string;
   @Column({ nullable: true }) notify_url: string;
+  @Column({ nullable: true }) company_uuid: string;
   @Column({ default: 'RUNNING' }) status: string;
   @CreateDateColumn() created_at: Date;
 }

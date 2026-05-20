@@ -10,6 +10,7 @@ import { MandateEntity } from '../src/database/entities/mandate.entity';
 import { CheckoutSessionEntity } from '../src/database/entities/checkout-session.entity';
 import { WebhookDeliveryService } from '../src/webhook-delivery/webhook-delivery.service';
 import { SeedService } from '../src/seed/seed.service';
+import { PaymentsService } from '../src/payments/payments.service';
 import { mockConfig } from '../src/common/mock-config';
 
 const mockPaymentMethodRepo = { find: jest.fn(), clear: jest.fn() };
@@ -25,6 +26,9 @@ const mockWebhookDeliveryService = {
   replay: jest.fn(),
   findAll: jest.fn().mockResolvedValue([]),
   clear: jest.fn().mockResolvedValue(undefined),
+};
+const mockPaymentsService = {
+  complete: jest.fn(),
 };
 
 describe('AdminService', () => {
@@ -57,6 +61,7 @@ describe('AdminService', () => {
         { provide: getRepositoryToken(CheckoutSessionEntity), useValue: mockCheckoutRepo },
         { provide: WebhookDeliveryService, useValue: mockWebhookDeliveryService },
         { provide: SeedService, useValue: mockSeedService },
+        { provide: PaymentsService, useValue: mockPaymentsService },
       ],
     }).compile();
 

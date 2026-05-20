@@ -5,6 +5,7 @@ import { PaymentsService } from '../src/payments/payments.service';
 import { PaymentEntity } from '../src/database/entities/payment.entity';
 import { MandateEntity } from '../src/database/entities/mandate.entity';
 import { WebhookDeliveryService } from '../src/webhook-delivery/webhook-delivery.service';
+import { mockConfig } from '../src/common/mock-config';
 
 const mockPaymentRepo = {
   create: jest.fn().mockImplementation((dto) => dto),
@@ -16,6 +17,7 @@ const mockPaymentRepo = {
 const mockMandateRepo = {
   create: jest.fn().mockImplementation((dto) => dto),
   save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
+  update: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockWebhookDelivery = {
@@ -28,7 +30,10 @@ const mockWebhookDelivery = {
 describe('PaymentsService', () => {
   let service: PaymentsService;
 
+  const savedDefaultNotifyUrl = mockConfig.defaultNotifyUrl;
+
   beforeEach(async () => {
+    mockConfig.defaultNotifyUrl = null;
     jest.clearAllMocks();
     mockPaymentRepo.create.mockImplementation((dto) => dto);
     mockPaymentRepo.save.mockImplementation((e) => Promise.resolve(e));
@@ -47,6 +52,10 @@ describe('PaymentsService', () => {
     }).compile();
 
     service = module.get<PaymentsService>(PaymentsService);
+  });
+
+  afterEach(() => {
+    mockConfig.defaultNotifyUrl = savedDefaultNotifyUrl;
   });
 
   const baseDto = {
@@ -139,6 +148,13 @@ describe('PaymentsService', () => {
       expect(calls).toContain('MANDATE_UPDATED');
       expect(calls).toContain('PAYMENT_STATUS');
     });
+
+    it('should deliver webhooks to default URL when company_uuid is set', async () => {
+      await service.submit({ ...baseDto, company_uuid: 'co-dev' });
+      expect(mockWebhookDelivery.deliver).toHaveBeenCalledTimes(2);
+      const target = mockWebhookDelivery.deliver.mock.calls[0][0].target_url as string;
+      expect(target).toBe('http://localhost:3005/v1/webhook/kwik/co-dev');
+    });
   });
 
   describe('updateStatus()', () => {
@@ -184,6 +200,85 @@ describe('PaymentsService', () => {
         target_url: 'https://hook.example.com',
         payload: expect.objectContaining({ payment_status: 'PAID' }),
       }));
+    });
+
+    it('should deliver to default URL with company_uuid substituted', async () => {
+      mockConfig.defaultNotifyUrl = 'http://localhost:3005/v1/webhook/kwik/{companyUuid}';
+      const existingPayment = {
+        id: 'pay_abc',
+        status: 'RUNNING',
+        notify_url: null,
+        company_uuid: 'co-99',
+        mandate_id: 'man_abc',
+        customers_id: 'cus_1',
+        amount: '100.00',
+      } as PaymentEntity;
+      mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
+
+      await service.updateStatus('pay_abc', 'PAID');
+
+      expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
+        target_url: 'http://localhost:3005/v1/webhook/kwik/co-99',
+      }));
+    });
+  });
+
+  describe('complete()', () => {
+    it('should set payment status to PAID and deliver webhook', async () => {
+      mockConfig.defaultNotifyUrl = 'http://localhost:3005/v1/webhook/kwik/{companyUuid}';
+      const existingPayment = {
+        id: 'pay_abc',
+        status: 'RUNNING',
+        notify_url: null,
+        company_uuid: 'co-1',
+        mandate_id: 'man_abc',
+        customers_id: 'cus_1',
+        amount: '500.00',
+      } as PaymentEntity;
+      mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
+
+      const result = await service.complete('pay_abc') as Record<string, unknown>;
+
+      expect(mockPaymentRepo.update).toHaveBeenCalledWith('pay_abc', { status: 'PAID' });
+      expect(mockMandateRepo.update).toHaveBeenCalledWith('man_abc', { status: 'ACTIVE' });
+      expect(result.status).toBe('PAID');
+      expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
+        event_type: 'PAYMENT_STATUS',
+        target_url: 'http://localhost:3005/v1/webhook/kwik/co-1',
+        payload: expect.objectContaining({ payment_status: 'PAID', status: 'PAID' }),
+      }));
+    });
+
+    it('should throw NotFoundException when payment is not found', async () => {
+      mockPaymentRepo.findOne.mockResolvedValue(null);
+      await expect(service.complete('pay_missing')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException when payment is already PAID', async () => {
+      mockPaymentRepo.findOne.mockResolvedValue({ id: 'pay_abc', status: 'PAID' } as PaymentEntity);
+      await expect(service.complete('pay_abc')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should deliver webhook using MOCK_DEFAULT_COMPANY_UUID when payment has no company_uuid', async () => {
+      mockConfig.defaultCompanyUuid = 'fallback-co';
+      const existingPayment = {
+        id: 'pay_abc',
+        status: 'RUNNING',
+        notify_url: null,
+        company_uuid: null,
+        mandate_id: 'man_abc',
+        customers_id: 'cus_1',
+        amount: '100.00',
+      } as PaymentEntity;
+      mockPaymentRepo.findOne.mockResolvedValue(existingPayment);
+
+      const result = await service.complete('pay_abc') as Record<string, unknown>;
+
+      expect(result.webhook_delivered).toBe(true);
+      expect(mockWebhookDelivery.deliver).toHaveBeenCalledWith(expect.objectContaining({
+        target_url: 'http://localhost:3005/v1/webhook/kwik/fallback-co',
+      }));
+      mockConfig.defaultCompanyUuid = null;
     });
   });
 });

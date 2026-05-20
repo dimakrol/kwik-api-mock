@@ -8,11 +8,13 @@ import { PaymentEntity } from '../database/entities/payment.entity';
 import { MandateEntity } from '../database/entities/mandate.entity';
 import { CheckoutSessionEntity } from '../database/entities/checkout-session.entity';
 import { WebhookDeliveryModule } from '../webhook-delivery/webhook-delivery.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 
 @Module({
   imports: [
+    PaymentsModule,
     TypeOrmModule.forFeature([
       PaymentMethodEntity,
       LookupEntity,

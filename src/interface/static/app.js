@@ -140,7 +140,8 @@ function renderOverview() {
     ['authMode', sc.authMode],
     ['cdvFailUnknown', String(sc.cdvFailUnknown)],
     ['avsFailUnknown', String(sc.avsFailUnknown)],
-    ['defaultNotifyUrl', sc.defaultNotifyUrl || '(none)'],
+    ['defaultCompanyUuid', sc.defaultCompanyUuid || '(none)'],
+    ['defaultNotifyUrl', sc.defaultNotifyUrl || '(built-in template)'],
     ['webhookAuthMode', sc.webhookAuthMode],
     ['webhookAccessKey', sc.webhookAccessKey || '(none)'],
     ['webhookAccessSecret set', sc.webhookAccessSecret ? 'yes' : 'no'],
@@ -159,7 +160,7 @@ const RECORD_COLUMNS = {
   lookups: ['id', 'title', 'enum', 'payment_methods_id'],
   customers: ['id', 'reference', 'person_name', 'person_surname', 'email', 'contact_number', 'customer_status'],
   bank_accounts: ['id', 'customers_id', 'bank_account_number', 'bank_account_type', 'bank_name', 'bank_branch_code', 'status'],
-  payments: ['id', 'mandate_id', 'customers_id', 'bank_accounts_id', 'payment_methods_id', 'amount', 'status', 'notify_url'],
+  payments: ['id', 'mandate_id', 'customers_id', 'company_uuid', 'amount', 'status', 'notify_url'],
   mandates: ['id', 'payments_id', 'customers_id', 'bank_accounts_id', 'status', 'cancel_reason'],
   checkout_sessions: ['id', 'customers_id', 'amount', 'mode', 'page_url', 'status', 'notify_url'],
 };
@@ -209,6 +210,26 @@ function renderRecords() {
     const detailId = `detail-${state.activeRecord}-${idx}`;
     const actions = el('div', { class: 'row-actions' }, [
       id ? el('button', { class: 'btn small', onclick: () => copy(String(id)) }, ['Copy ID']) : null,
+      state.activeRecord === 'payments' && row.status === 'RUNNING' && id
+        ? el('button', {
+          class: 'btn small primary',
+          onclick: async () => {
+            try {
+              const sc = (state.data && state.data.scenario) || {};
+              const body = sc.defaultCompanyUuid ? { company_uuid: sc.defaultCompanyUuid } : {};
+              const r = await api(`/admin/payments/${id}/complete`, { method: 'POST', body });
+              const delivered = r.payments && r.payments.webhook_delivered;
+              const msg = delivered
+                ? `Payment ${id} completed — webhook sent`
+                : `Payment ${id} completed — no webhook (set defaultCompanyUuid in Settings)`;
+              setStatus('#actions-result', msg, delivered ? 'ok' : 'err');
+              await refresh();
+            } catch (e) {
+              setStatus('#actions-result', 'Complete failed: ' + e.message, 'err');
+            }
+          },
+        }, ['Complete'])
+        : null,
       el('button', {
         class: 'btn small',
         onclick: () => {
@@ -484,6 +505,7 @@ function renderScenarioForm() {
   $('#sc-webhookAuthMode').value = sc.webhookAuthMode || 'basic';
   $('#sc-cdvFailUnknown').checked = !!sc.cdvFailUnknown;
   $('#sc-avsFailUnknown').checked = !!sc.avsFailUnknown;
+  $('#sc-defaultCompanyUuid').value = sc.defaultCompanyUuid || '';
   $('#sc-defaultNotifyUrl').value = sc.defaultNotifyUrl || '';
   $('#sc-webhookAccessKey').value = sc.webhookAccessKey || '';
   $('#sc-webhookAccessSecret').value = sc.webhookAccessSecret || '';
@@ -496,6 +518,7 @@ async function saveScenario() {
     webhookAuthMode: $('#sc-webhookAuthMode').value,
     cdvFailUnknown: $('#sc-cdvFailUnknown').checked,
     avsFailUnknown: $('#sc-avsFailUnknown').checked,
+    defaultCompanyUuid: $('#sc-defaultCompanyUuid').value || null,
     defaultNotifyUrl: $('#sc-defaultNotifyUrl').value || null,
     webhookAccessKey: $('#sc-webhookAccessKey').value,
     webhookAccessSecret: $('#sc-webhookAccessSecret').value,

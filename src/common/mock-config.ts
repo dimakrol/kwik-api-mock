@@ -4,6 +4,7 @@ const overrides: {
   cdvFailUnknown: boolean | null;
   avsFailUnknown: boolean | null;
   defaultNotifyUrl: string | null;
+  defaultCompanyUuid: string | null;
   webhookAuthMode: string | null;
   webhookAccessKey: string | null;
   webhookAccessSecret: string | null;
@@ -13,6 +14,7 @@ const overrides: {
   cdvFailUnknown: null,
   avsFailUnknown: null,
   defaultNotifyUrl: null,
+  defaultCompanyUuid: null,
   webhookAuthMode: null,
   webhookAccessKey: null,
   webhookAccessSecret: null,
@@ -31,6 +33,11 @@ export const mockConfig = {
 
   get defaultNotifyUrl(): string | null { return overrides.defaultNotifyUrl ?? process.env.MOCK_DEFAULT_NOTIFY_URL ?? null; },
   set defaultNotifyUrl(v: string | null) { overrides.defaultNotifyUrl = v; },
+
+  get defaultCompanyUuid(): string | null {
+    return overrides.defaultCompanyUuid ?? process.env.MOCK_DEFAULT_COMPANY_UUID ?? null;
+  },
+  set defaultCompanyUuid(v: string | null) { overrides.defaultCompanyUuid = v; },
 
   get webhookAuthMode(): string { return overrides.webhookAuthMode ?? process.env.MOCK_WEBHOOK_AUTH_MODE ?? 'basic'; },
   set webhookAuthMode(v: string) { overrides.webhookAuthMode = v; },
@@ -52,6 +59,7 @@ export const mockConfig = {
     overrides.cdvFailUnknown = null;
     overrides.avsFailUnknown = null;
     overrides.defaultNotifyUrl = null;
+    overrides.defaultCompanyUuid = null;
     overrides.webhookAuthMode = null;
     overrides.webhookAccessKey = null;
     overrides.webhookAccessSecret = null;
@@ -64,6 +72,7 @@ export const mockConfig = {
       cdvFailUnknown: this.cdvFailUnknown,
       avsFailUnknown: this.avsFailUnknown,
       defaultNotifyUrl: this.defaultNotifyUrl,
+      defaultCompanyUuid: this.defaultCompanyUuid,
       webhookAuthMode: this.webhookAuthMode,
       webhookAccessKey: this.webhookAccessKey,
       webhookAccessSecret: this.webhookAccessSecret,

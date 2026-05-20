@@ -27,7 +27,8 @@ export class PaymentsController {
         payment_interval: 'MONTHLY',
         date_start: '2026-01-01',
         date_end: '2027-01-01',
-        notify_url: 'http://localhost:3001/webhook/kwik/company-uuid',
+        company_uuid: 'my-company-uuid',
+        notify_url: 'http://localhost:3005/v1/webhook/kwik/my-company-uuid',
       },
     },
   })
@@ -61,9 +62,33 @@ export class PaymentsController {
       notify_url?: string;
       webhook_url?: string;
       callback_url?: string;
+      company_uuid?: string;
     },
   ): Promise<{ status: boolean; payments: object }> {
     const payments = await this.service.submit(body);
+    return { status: true, payments };
+  }
+
+  @Post(':paymentsId/complete')
+  @ApiOperation({ summary: 'Finish a payment (PAID) and deliver PAYMENT_STATUS webhook' })
+  @ApiParam({ name: 'paymentsId', description: 'Payment ID (pay_xxx)' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        status: true,
+        payments: { id: 'pay_xxx', status: 'PAID', mandate_id: 'man_xxx', company_uuid: 'company-uuid' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Payment already PAID', schema: validationErrorSchema })
+  @ApiResponse({ status: 401, description: 'Invalid API key', schema: unauthorizedSchema })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  async complete(
+    @Param('paymentsId') paymentsId: string,
+    @Body() body: { company_uuid?: string } = {},
+  ): Promise<{ status: boolean; payments: object }> {
+    const payments = await this.service.complete(paymentsId, body);
     return { status: true, payments };
   }
 

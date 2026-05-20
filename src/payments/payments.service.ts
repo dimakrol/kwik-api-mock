@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaymentEntity } from '../database/entities/payment.entity';
@@ -6,6 +6,7 @@ import { MandateEntity } from '../database/entities/mandate.entity';
 import { WebhookDeliveryService } from '../webhook-delivery/webhook-delivery.service';
 import { genId } from '../common/gen-id.util';
 import { mockConfig } from '../common/mock-config';
+import { resolvePaymentNotifyUrl } from '../common/resolve-payment-notify-url.util';
 
 const VALID_STATUSES = ['RUNNING', 'STOPPED', 'PAUSED', 'CANCELLED', 'PAID', 'FAILED', 'REVERSED'];
 
@@ -21,10 +22,17 @@ interface SubmitPaymentDto {
   notify_url?: string;
   webhook_url?: string;
   callback_url?: string;
+  company_uuid?: string;
+}
+
+export interface CompletePaymentOptions {
+  company_uuid?: string;
 }
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(PaymentEntity)
     private readonly paymentRepo: Repository<PaymentEntity>,
@@ -47,6 +55,7 @@ export class PaymentsService {
     const mandateId = genId('man');
     const paymentId = genId('pay');
     const notifyUrl = dto.notify_url ?? dto.webhook_url ?? dto.callback_url ?? null;
+    const companyUuid = dto.company_uuid?.trim() || mockConfig.defaultCompanyUuid?.trim() || null;
 
     const mandate = this.mandateRepo.create({
       id: mandateId,
@@ -69,11 +78,12 @@ export class PaymentsService {
       date_start: dto.date_start ?? null,
       date_end: dto.date_end ?? null,
       notify_url: notifyUrl,
+      company_uuid: companyUuid,
       status: 'RUNNING',
     });
     await this.paymentRepo.save(payment);
 
-    const effectiveNotifyUrl = notifyUrl ?? mockConfig.defaultNotifyUrl;
+    const effectiveNotifyUrl = resolvePaymentNotifyUrl(payment);
     if (effectiveNotifyUrl) {
       await this.webhookDelivery.deliver({
         event_type: 'MANDATE_UPDATED',
@@ -137,26 +147,79 @@ export class PaymentsService {
     }
     await this.paymentRepo.update(paymentsId, { status });
 
-    const notifyUrl = payment.notify_url ?? mockConfig.defaultNotifyUrl;
-    if (notifyUrl) {
-      await this.webhookDelivery.deliver({
-        event_type: 'PAYMENT_STATUS',
-        target_url: notifyUrl,
-        payload: {
-          kwik_payment_id: paymentsId,
-          payments_id: paymentsId,
-          kwik_mandate_id: payment.mandate_id,
-          mandate_id: payment.mandate_id,
-          kwik_customer_id: payment.customers_id,
-          customers_id: payment.customers_id,
-          transaction_id: genId('txn'),
-          amount: payment.amount,
-          payment_status: status,
-          status,
-        },
+    await this.deliverPaymentStatusWebhook(payment, status);
+
+    return { id: paymentsId, status };
+  }
+
+  /** Mark an existing payment as PAID and deliver PAYMENT_STATUS webhook. */
+  async complete(paymentsId: string, options: CompletePaymentOptions = {}): Promise<object> {
+    const payment = await this.paymentRepo.findOne({ where: { id: paymentsId } });
+    if (!payment) {
+      throw new NotFoundException({ status: false, error_code: '007', error_message: 'Payment not found' });
+    }
+    if (payment.status === 'PAID') {
+      throw new BadRequestException({
+        status: false,
+        error_code: '002',
+        error_message: 'Payment is already PAID',
       });
     }
 
-    return { id: paymentsId, status };
+    const companyUuid = options.company_uuid?.trim()
+      || payment.company_uuid?.trim()
+      || mockConfig.defaultCompanyUuid?.trim()
+      || null;
+
+    if (companyUuid && !payment.company_uuid) {
+      await this.paymentRepo.update(paymentsId, { company_uuid: companyUuid });
+      payment.company_uuid = companyUuid;
+    }
+
+    await this.paymentRepo.update(paymentsId, { status: 'PAID' });
+    payment.status = 'PAID';
+
+    if (payment.mandate_id) {
+      await this.mandateRepo.update(payment.mandate_id, { status: 'ACTIVE' });
+    }
+
+    const webhookDelivered = await this.deliverPaymentStatusWebhook(payment, 'PAID');
+
+    return {
+      id: paymentsId,
+      status: 'PAID',
+      mandate_id: payment.mandate_id,
+      company_uuid: payment.company_uuid ?? companyUuid,
+      webhook_delivered: webhookDelivered,
+      webhook_target_url: webhookDelivered ? resolvePaymentNotifyUrl(payment) : null,
+    };
+  }
+
+  private async deliverPaymentStatusWebhook(payment: PaymentEntity, status: string): Promise<boolean> {
+    const targetUrl = resolvePaymentNotifyUrl(payment);
+    if (!targetUrl) {
+      this.logger.warn(
+        `Skipping PAYMENT_STATUS webhook for ${payment.id}: set payment.company_uuid, notify_url, or MOCK_DEFAULT_COMPANY_UUID`,
+      );
+      return false;
+    }
+
+    await this.webhookDelivery.deliver({
+      event_type: 'PAYMENT_STATUS',
+      target_url: targetUrl,
+      payload: {
+        kwik_payment_id: payment.id,
+        payments_id: payment.id,
+        kwik_mandate_id: payment.mandate_id,
+        mandate_id: payment.mandate_id,
+        kwik_customer_id: payment.customers_id,
+        customers_id: payment.customers_id,
+        transaction_id: genId('txn'),
+        amount: payment.amount,
+        payment_status: status,
+        status,
+      },
+    });
+    return true;
   }
 }

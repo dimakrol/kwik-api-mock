@@ -181,8 +181,11 @@
           </label>
           <label class="check"><input type="checkbox" id="sc-cdvFailUnknown" /> cdvFailUnknown</label>
           <label class="check"><input type="checkbox" id="sc-avsFailUnknown" /> avsFailUnknown</label>
+          <label class="full">defaultCompanyUuid
+            <input type="text" id="sc-defaultCompanyUuid" class="input" placeholder="required for webhooks when payment has no company_uuid" />
+          </label>
           <label class="full">defaultNotifyUrl
-            <input type="text" id="sc-defaultNotifyUrl" class="input" placeholder="leave empty to disable auto-delivery" />
+            <input type="text" id="sc-defaultNotifyUrl" class="input" placeholder="optional override; default http://localhost:3005/v1/webhook/kwik/{companyUuid}" />
           </label>
           <label>webhookAccessKey
             <input type="text" id="sc-webhookAccessKey" class="input" />

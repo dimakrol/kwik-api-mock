@@ -258,6 +258,32 @@ describe('AdminService', () => {
     });
   });
 
+  describe('deleteRecords()', () => {
+    it('should delete multiple lookups and report not found ids', async () => {
+      mockLookupRepo.delete
+        .mockResolvedValueOnce({ affected: 1 })
+        .mockResolvedValueOnce({ affected: 0 });
+
+      const result = await service.deleteRecords('lookups', ['loo_a', 'loo_b', 'loo_a']);
+
+      expect(result).toEqual({
+        ok: true,
+        resource: 'lookups',
+        deleted: ['loo_a'],
+        notFound: ['loo_b'],
+      });
+      expect(mockLookupRepo.delete).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw BadRequestException when ids empty', async () => {
+      await expect(service.deleteRecords('lookups', [])).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException for unknown resource', async () => {
+      await expect(service.deleteRecords('unknown_table', ['x'])).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('getScenario()', () => {
     it('should return current scenario config', () => {
       const scenario = service.getScenario() as Record<string, unknown>;

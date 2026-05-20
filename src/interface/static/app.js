@@ -18,6 +18,7 @@ const state = {
   view: 'overview',
   activeRecord: 'payment_methods',
   recordFilter: '',
+  selection: {},
   webhookFilters: {
     eventType: '',
     success: 'all',
@@ -25,6 +26,8 @@ const state = {
     eventId: '',
   },
 };
+
+const WEBHOOK_RESOURCE = 'webhook_deliveries';
 
 // ---------- DOM helpers ----------
 
@@ -66,6 +69,94 @@ function setStatus(id, text, kind) {
   if (!node) return;
   node.textContent = text;
   node.className = 'result-line' + (kind ? ' ' + kind : '');
+}
+
+function getSelection(resource) {
+  if (!state.selection[resource]) state.selection[resource] = new Set();
+  return state.selection[resource];
+}
+
+function pruneSelection(resource, validIds) {
+  const sel = getSelection(resource);
+  const valid = new Set(validIds);
+  for (const id of [...sel]) {
+    if (!valid.has(id)) sel.delete(id);
+  }
+}
+
+function checkboxCell(id, resource, checked) {
+  return el('td', { class: 'col-check' }, [
+    el('input', {
+      type: 'checkbox',
+      checked: checked || undefined,
+      onchange: (e) => {
+        const sel = getSelection(resource);
+        if (e.target.checked) sel.add(id);
+        else sel.delete(id);
+        if (resource === WEBHOOK_RESOURCE) {
+          renderWebhooks();
+        } else {
+          renderRecords();
+        }
+      },
+    }),
+  ]);
+}
+
+function renderBulkBar(barId, resource, visibleIds) {
+  const bar = $(barId);
+  if (!bar) return;
+  const sel = getSelection(resource);
+  const selectedCount = visibleIds.filter((id) => sel.has(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && selectedCount === visibleIds.length;
+  const someSelected = selectedCount > 0;
+
+  bar.classList.toggle('hidden', visibleIds.length === 0);
+  bar.innerHTML = '';
+  bar.appendChild(
+    el('label', { class: 'check' }, [
+      el('input', {
+        type: 'checkbox',
+        checked: allVisibleSelected || undefined,
+        onchange: (e) => {
+          if (e.target.checked) {
+            visibleIds.forEach((id) => sel.add(id));
+          } else {
+            visibleIds.forEach((id) => sel.delete(id));
+          }
+          if (resource === WEBHOOK_RESOURCE) renderWebhooks();
+          else renderRecords();
+        },
+      }),
+      document.createTextNode(' Select all visible'),
+    ]),
+  );
+  bar.appendChild(
+    el('span', { class: 'bulk-count' }, [
+      `${selectedCount} selected${visibleIds.length ? ` (${visibleIds.length} visible)` : ''}`,
+    ]),
+  );
+  bar.appendChild(
+    el('button', {
+      class: 'btn small danger',
+      disabled: !someSelected || undefined,
+      onclick: () => deleteSelectedRecords(resource, [...sel]),
+    }, ['Delete selected']),
+  );
+  if (someSelected) {
+    bar.appendChild(
+      el('button', {
+        class: 'btn small',
+        onclick: () => {
+          sel.clear();
+          if (resource === WEBHOOK_RESOURCE) renderWebhooks();
+          else renderRecords();
+        },
+      }, ['Clear selection']),
+    );
+  }
+  const master = bar.querySelector('input[type="checkbox"]');
+  if (master) master.indeterminate = someSelected && !allVisibleSelected;
 }
 
 // ---------- API calls ----------
@@ -232,9 +323,30 @@ async function deleteRecord(resource, id) {
   try {
     await api(`/admin/records/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' });
     setStatus('#actions-result', `Deleted ${resource} ${id}`, 'ok');
+    getSelection(resource).delete(id);
     await refresh();
   } catch (e) {
     setStatus('#actions-result', 'Delete failed: ' + e.message, 'err');
+  }
+}
+
+async function deleteSelectedRecords(resource, ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return;
+  const label = unique.length === 1 ? `"${unique[0]}"` : `${unique.length} records`;
+  if (!confirm(`Delete ${label} from ${resource}?`)) return;
+  try {
+    const r = await api(`/admin/records/${resource}`, { method: 'DELETE', body: { ids: unique } });
+    const sel = getSelection(resource);
+    unique.forEach((id) => sel.delete(id));
+    let msg = `Deleted ${r.deleted.length} ${resource}`;
+    if (r.notFound && r.notFound.length) {
+      msg += `; not found: ${r.notFound.join(', ')}`;
+    }
+    setStatus('#actions-result', msg, r.notFound?.length ? 'err' : 'ok');
+    await refresh();
+  } catch (e) {
+    setStatus('#actions-result', 'Bulk delete failed: ' + e.message, 'err');
   }
 }
 
@@ -243,21 +355,28 @@ function renderRecords() {
   container.innerHTML = '';
   if (!state.data) {
     container.appendChild(el('div', { class: 'muted' }, ['No data loaded.']));
+    const bar = $('#record-bulk-bar');
+    if (bar) bar.classList.add('hidden');
     return;
   }
   const rows = state.data[state.activeRecord] || [];
   const cols = RECORD_COLUMNS[state.activeRecord] || (rows[0] ? Object.keys(rows[0]).slice(0, 6) : []);
   const filtered = rows.filter((r) => rowMatchesFilter(r, state.recordFilter));
+  const visibleIds = filtered.map((r) => (r.id != null ? String(r.id) : '')).filter(Boolean);
+  pruneSelection(state.activeRecord, rows.map((r) => (r.id != null ? String(r.id) : '')).filter(Boolean));
+  renderBulkBar('#record-bulk-bar', state.activeRecord, visibleIds);
 
   if (filtered.length === 0) {
     container.appendChild(el('div', { class: 'muted' }, [`No ${state.activeRecord} (${rows.length} total).`]));
     return;
   }
 
+  const sel = getSelection(state.activeRecord);
   const wrap = el('div', { class: 'table-scroll' });
   const table = el('table');
   const thead = el('thead');
   const headRow = el('tr');
+  headRow.appendChild(el('th', { class: 'col-check' }, ['']));
   for (const c of cols) headRow.appendChild(el('th', {}, [c]));
   headRow.appendChild(el('th', {}, ['actions']));
   thead.appendChild(headRow);
@@ -266,12 +385,14 @@ function renderRecords() {
   const tbody = el('tbody');
   filtered.forEach((row, idx) => {
     const tr = el('tr');
+    const id = row.id != null ? String(row.id) : '';
+    if (id) tr.appendChild(checkboxCell(id, state.activeRecord, sel.has(id)));
+    else tr.appendChild(el('td', { class: 'col-check' }, ['']));
     for (const c of cols) {
       const v = row[c];
       const text = v === null || v === undefined ? '' : String(v);
       tr.appendChild(el('td', {}, [text]));
     }
-    const id = row.id ?? '';
     const detailId = `detail-${state.activeRecord}-${idx}`;
     const actions = el('div', { class: 'row-actions' }, [
       id ? el('button', { class: 'btn small', onclick: () => copy(String(id)) }, ['Copy ID']) : null,
@@ -312,7 +433,7 @@ function renderRecords() {
     tbody.appendChild(tr);
 
     const detailTr = el('tr', { class: 'detail-row', id: detailId, style: 'display:none' });
-    const detailCell = el('td', { colspan: String(cols.length + 1) });
+    const detailCell = el('td', { colspan: String(cols.length + 2) });
     detailCell.appendChild(el('pre', {}, [JSON.stringify(row, null, 2)]));
     detailTr.appendChild(detailCell);
     tbody.appendChild(detailTr);
@@ -350,14 +471,21 @@ function renderWebhooks() {
   container.innerHTML = '';
   const all = (state.data && state.data.webhook_deliveries) || [];
   const rows = all.filter(webhookMatches);
+  const visibleIds = rows.map((d) => (d.id != null ? String(d.id) : '')).filter(Boolean);
+  pruneSelection(WEBHOOK_RESOURCE, all.map((d) => (d.id != null ? String(d.id) : '')).filter(Boolean));
+  renderBulkBar('#webhook-bulk-bar', WEBHOOK_RESOURCE, visibleIds);
+
   if (rows.length === 0) {
     container.appendChild(el('div', { class: 'muted' }, [`No webhook deliveries (${all.length} total).`]));
     return;
   }
+
+  const sel = getSelection(WEBHOOK_RESOURCE);
   const wrap = el('div', { class: 'table-scroll' });
   const table = el('table');
   const thead = el('thead');
   const headRow = el('tr');
+  headRow.appendChild(el('th', { class: 'col-check' }, ['']));
   ['created_at', 'id', 'event_id', 'event_type', 'target_url', 'status', 'badge', 'error', 'actions'].forEach((c) => {
     headRow.appendChild(el('th', {}, [c]));
   });
@@ -367,6 +495,9 @@ function renderWebhooks() {
   const tbody = el('tbody');
   rows.forEach((d, idx) => {
     const tr = el('tr');
+    const whId = d.id != null ? String(d.id) : '';
+    if (whId) tr.appendChild(checkboxCell(whId, WEBHOOK_RESOURCE, sel.has(whId)));
+    else tr.appendChild(el('td', { class: 'col-check' }, ['']));
     tr.appendChild(el('td', {}, [d.created_at || '']));
     tr.appendChild(el('td', {}, [d.id || '']));
     tr.appendChild(el('td', {}, [d.event_id || '']));
@@ -396,7 +527,7 @@ function renderWebhooks() {
     tbody.appendChild(tr);
 
     const detailTr = el('tr', { class: 'detail-row', id: detailId, style: 'display:none' });
-    const detailCell = el('td', { colspan: '9' });
+    const detailCell = el('td', { colspan: '10' });
     let reqBody = d.request_body || '';
     let respBody = d.response_body || '';
     try { reqBody = JSON.stringify(JSON.parse(reqBody), null, 2); } catch (_) {}

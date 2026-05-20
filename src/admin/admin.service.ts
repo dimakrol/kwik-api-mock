@@ -77,6 +77,39 @@ export class AdminService {
     return { ok: true, resource, id: id.trim() };
   }
 
+  async deleteRecords(
+    resource: string,
+    ids: string[],
+  ): Promise<{
+    ok: true;
+    resource: AdminRecordResource;
+    deleted: string[];
+    notFound: string[];
+  }> {
+    if (!isAdminRecordResource(resource)) {
+      throw new BadRequestException({
+        ok: false,
+        message: `Unknown resource "${resource}". Allowed: ${ADMIN_RECORD_RESOURCES.join(', ')}`,
+      });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException({ ok: false, message: 'ids array is required and must not be empty' });
+    }
+
+    const uniqueIds = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))];
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+
+    for (const id of uniqueIds) {
+      const removed = await this.deleteRecordByType(resource, id);
+      if (removed) deleted.push(id);
+      else notFound.push(id);
+    }
+
+    return { ok: true, resource, deleted, notFound };
+  }
+
   private async deleteRecordByType(resource: AdminRecordResource, id: string): Promise<boolean> {
     switch (resource) {
       case 'payment_methods': {

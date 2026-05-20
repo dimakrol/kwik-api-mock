@@ -39,7 +39,7 @@ Open **http://localhost:3099/interface** (redirects to `/interface/overview`). R
 
 Features:
 
-- Browse and **delete** individual rows (button per record; calls `DELETE /admin/records/:resource/:id`)
+- Browse and **delete** rows (per-row or bulk via checkboxes; `DELETE /admin/records/:resource/:id` or `DELETE /admin/records/:resource` with `{ ids }`)
 - Inspect **webhook delivery** history (success and failures)
 - Fire or replay webhooks manually
 - Tune **scenario** flags (auth, CDV, default company UUID, webhook URL template)
@@ -121,6 +121,11 @@ Data dump, reset, seed, scenario flags, manual webhook fire/replay, payment comp
 ```bash
 # Delete one payment (cascades linked mandate)
 curl -X DELETE http://localhost:3099/admin/records/payments/pay_xxx
+
+# Delete multiple webhook deliveries
+curl -X DELETE http://localhost:3099/admin/records/webhook_deliveries \
+  -H 'Content-Type: application/json' \
+  -d '{"ids":["wdl_abc","wdl_def"]}'
 ```
 
 ## Environment variables

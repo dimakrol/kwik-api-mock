@@ -12,11 +12,9 @@ import {
   sanitizeHeaders,
   sanitizePayload,
 } from './sanitize-payload.util';
+import { shouldSkipInboundHttpLog } from './should-skip-inbound-http-log.util';
 
 type RequestWithMeta = Request & { rawBody?: string };
-
-/** High-frequency polling endpoints — skip inbound request/response logs. */
-const SKIP_INBOUND_LOG_PATHS = ['/admin/interface-data'];
 
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
@@ -34,7 +32,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const res = http.getResponse<Response>();
 
     const path = req.path ?? req.url?.split('?')[0] ?? '';
-    if (SKIP_INBOUND_LOG_PATHS.some((skip) => path === skip || path.startsWith(`${skip}/`))) {
+    if (shouldSkipInboundHttpLog(path)) {
       return next.handle();
     }
 

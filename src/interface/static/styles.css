@@ -337,6 +337,40 @@ tr.detail-row pre {
   border-radius: 6px;
 }
 
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.bulk-bar.hidden {
+  display: none;
+}
+
+.bulk-bar .bulk-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+th.col-check,
+td.col-check {
+  width: 36px;
+  text-align: center;
+  padding: 6px 4px;
+}
+
+th.col-check input,
+td.col-check input {
+  cursor: pointer;
+  margin: 0;
+}
+
 .badge {
   display: inline-block;
   padding: 1px 8px;

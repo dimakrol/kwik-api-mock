@@ -130,6 +130,7 @@ Uses `session.notify_url` or `mockConfig.defaultNotifyUrl` (not payment `resolve
 | POST | `/admin/webhook/fire` | Fire webhook to arbitrary URL |
 | POST | `/admin/webhook/replay/:deliveryId` | Replay stored delivery |
 | POST | `/admin/payments/:paymentsId/complete` | Same as Kwik complete; optional `company_uuid` body |
+| DELETE | `/admin/records/:resource` | Delete multiple rows — body `{ "ids": ["pay_xxx", …] }` |
 | DELETE | `/admin/records/:resource/:id` | Delete one row (see Web interface) |
 | GET | `/admin/data` | Full DB dump + `webhook_deliveries` + scenario |
 | GET | `/admin/interface-data` | Dashboard aggregate `{ data, summary }` |
@@ -143,7 +144,7 @@ Static assets: `src/interface/static/` — served at `/` and `/interface/*` (exc
 
 **Client-side routes** (History API): `/interface/overview`, `/interface/records/:recordType`, `/interface/webhooks`, `/interface/sender`, `/interface/scenario`, `/interface/raw`. Deep links and reloads are served `index.html` via `GET interface/:path(.*)` in `InterfaceController` (do not stack multiple `@Get` on one handler — Nest registers only the first path).
 
-**Delete records:** `DELETE /admin/records/:resource/:id` — resources: `payment_methods`, `lookups`, `customers`, `bank_accounts`, `payments`, `mandates`, `checkout_sessions`, `webhook_deliveries`. Cascades: payment → mandates; customer → bank accounts, payments, mandates, checkouts; payment_method → lookups.
+**Delete records:** `DELETE /admin/records/:resource/:id` (one row) or `DELETE /admin/records/:resource` with body `{ ids: [...] }` (bulk). Resources: `payment_methods`, `lookups`, `customers`, `bank_accounts`, `payments`, `mandates`, `checkout_sessions`, `webhook_deliveries`. Dashboard UI: per-row checkboxes, “Select all visible”, “Delete selected”. Cascades: payment → mandates; customer → bank accounts, payments, mandates, checkouts; payment_method → lookups.
 
 ## Data Model
 

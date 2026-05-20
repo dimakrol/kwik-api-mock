@@ -80,6 +80,27 @@ export class AdminController {
     return this.service.completePayment(paymentsId, body);
   }
 
+  @Delete('records/:resource')
+  @ApiOperation({ summary: 'Delete multiple records from the mock database' })
+  @ApiParam({ name: 'resource', description: 'Table key: payment_methods, lookups, customers, …' })
+  @ApiBody({
+    schema: {
+      example: { ids: ['pay_abc', 'pay_def'] },
+      required: ['ids'],
+      properties: { ids: { type: 'array', items: { type: 'string' } } },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    schema: { example: { ok: true, resource: 'payments', deleted: ['pay_abc'], notFound: [] } },
+  })
+  async deleteRecords(
+    @Param('resource') resource: string,
+    @Body() body: { ids: string[] },
+  ): Promise<object> {
+    return this.service.deleteRecords(resource, body?.ids ?? []);
+  }
+
   @Delete('records/:resource/:id')
   @ApiOperation({ summary: 'Delete a single record from the mock database' })
   @ApiParam({ name: 'resource', description: 'Table key: payment_methods, lookups, customers, …' })

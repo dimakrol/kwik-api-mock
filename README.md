@@ -42,7 +42,27 @@ Features:
 - Browse and **delete** rows (per-row or bulk via checkboxes; `DELETE /admin/records/:resource/:id` or `DELETE /admin/records/:resource` with `{ ids }`)
 - Inspect **webhook delivery** history (success and failures)
 - Fire or replay webhooks manually
+- Fire the same manual webhooks from terminal with `pnpm webhook:send`
 - Tune **scenario** flags (auth, CDV, default company UUID, webhook URL template)
+
+### Send a manual webhook from terminal
+
+The CLI calls the same `POST /admin/webhook/fire` endpoint used by `/interface/sender`.
+
+```bash
+pnpm webhook:send -- \
+  --target-url http://localhost:3005/v1/webhook/kwik/co-dev \
+  --event-type PAYMENT_STATUS \
+  --template \
+  --set kwik_payment_id=pay_123 \
+  --set status=PAID
+```
+
+Useful options:
+
+- `--payload-json '{"status":"PAID"}'` or `--payload-file ./payload.json`
+- `--target-preset local --company-uuid co-dev` to build the target URL
+- `--auth-mode basic --access-key test_key --access-secret test_secret`
 
 ## Payment webhooks (important)
 

@@ -40,9 +40,10 @@ Not currently implemented because Jobix does not need them yet: cards, orders, p
 pnpm install
 pnpm start:dev       # watch mode, port 3099
 pnpm build           # compiles to dist/ via tsconfig.build.json
-pnpm test            # Jest unit tests (~164 tests, 15 spec files)
+pnpm test            # Jest unit tests
 pnpm test:cov        # test + coverage report
 pnpm lint            # ESLint
+pnpm webhook:send -- --target-url http://localhost:3005/v1/webhook/kwik/<companyUuid> --event-type PAYMENT_STATUS --template
 ```
 
 Point consuming services at the mock:
@@ -83,6 +84,8 @@ src/
   interface/                   # static dashboard at / and /interface
 test/                          # Jest specs per service/util
 scripts/test-jobix-kwik-e2e.sh # mock-only or full Jobix e2e
+scripts/fire-webhook.mjs       # CLI wrapper around POST /admin/webhook/fire
+scripts/fire-webhook-lib.cjs   # CLI argument parsing + payload/template helpers
 ```
 
 Feature modules: `*.module.ts` / `*.controller.ts` / `*.service.ts`.
@@ -138,11 +141,15 @@ Uses `session.notify_url` or `mockConfig.defaultNotifyUrl` (not payment `resolve
 | POST | `/admin/seed` | Re-run seed |
 | GET/POST | `/admin/scenario` | Read/update runtime flags |
 
+**Manual webhook CLI:** `pnpm webhook:send` calls the same `POST /admin/webhook/fire` endpoint used by the dashboard sender. It accepts `--target-url` or `--target-preset local|stage --company-uuid`, `--event-type`, `--template`, `--payload-json`, `--payload-file`, repeated `--set key=value`, and auth overrides (`--auth-mode`, `--access-key`, `--access-secret`, `--hmac-secret`). Keep CLI request bodies aligned with the admin endpoint shape: `{ target_url, event_type, payload, auth? }`.
+
 ### Web interface
 
 Static assets: `src/interface/static/` — served at `/` and `/interface/*` (excluded from `/1.0` prefix).
 
 **Client-side routes** (History API): `/interface/overview`, `/interface/records/:recordType`, `/interface/webhooks`, `/interface/sender`, `/interface/scenario`, `/interface/raw`. Deep links and reloads are served `index.html` via `GET interface/:path(.*)` in `InterfaceController` (do not stack multiple `@Get` on one handler — Nest registers only the first path).
+
+**Event sender:** `/interface/sender` fires manual webhooks through `/admin/webhook/fire`. When changing sender event templates or target presets, update `scripts/fire-webhook-lib.cjs` and `test/fire-webhook-cli.spec.ts` so the terminal sender stays behaviorally aligned.
 
 **Delete records:** `DELETE /admin/records/:resource/:id` (one row) or `DELETE /admin/records/:resource` with body `{ ids: [...] }` (bulk). Resources: `payment_methods`, `lookups`, `customers`, `bank_accounts`, `payments`, `mandates`, `checkout_sessions`, `webhook_deliveries`. Dashboard UI: per-row checkboxes, “Select all visible”, “Delete selected”. Cascades: payment → mandates; customer → bank accounts, payments, mandates, checkouts; payment_method → lookups.
 
@@ -195,6 +202,12 @@ Used by: `payments/submit`, `payments/status`, `payments/complete`.
 Payload follows the documented webhook shape: `id`, `type`, `status`, `results`, `webhook_event`, `created_at`.
 
 **jb-inner-api target (typical):** `POST http://localhost:3005/v1/webhook/kwik/<companyUuid>`
+
+Manual webhook senders:
+
+- Web UI: `/interface/sender`
+- CLI: `pnpm webhook:send -- --target-url <url> --event-type <type> [--template | --payload-json ... | --payload-file ...]`
+- Both paths are admin/test helpers and should continue to store attempts in `webhook_deliveries` via `WebhookDeliveryService`.
 
 ## Runtime Scenario Controls
 

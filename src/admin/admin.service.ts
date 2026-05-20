@@ -16,7 +16,12 @@ interface FireWebhookDto {
   target_url: string;
   event_type: string;
   payload: Record<string, unknown>;
-  auth?: { access_key: string; access_secret: string };
+  auth?: {
+    access_key?: string;
+    access_secret?: string;
+    auth_mode?: string;
+    hmac_secret?: string;
+  };
 }
 
 @Injectable()

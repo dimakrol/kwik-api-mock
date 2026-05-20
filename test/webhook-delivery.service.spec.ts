@@ -153,6 +153,38 @@ describe('WebhookDeliveryService', () => {
       expect(headers['Authorization']).toBe(expected);
     });
 
+    it('should use auth_override auth_mode for one delivery without mutating scenario', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      mockConfig.webhookAuthMode = 'basic';
+
+      await service.deliver({
+        event_type: 'PAYMENT_STATUS',
+        target_url: 'https://hook.example.com',
+        payload: {},
+        auth_override: { auth_mode: 'api-key', access_key: 'single_send_key' },
+      });
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['x-kwik-api-key']).toBe('single_send_key');
+      expect(headers['Authorization']).toBeUndefined();
+      expect(mockConfig.webhookAuthMode).toBe('basic');
+    });
+
+    it('should use auth_override hmac_secret for hmac mode', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+
+      await service.deliver({
+        event_type: 'PAYMENT_STATUS',
+        target_url: 'https://hook.example.com',
+        payload: { payments_id: 'pay_1' },
+        event_id: 'evt_hmac',
+        auth_override: { auth_mode: 'hmac', hmac_secret: 'single-send-secret' },
+      });
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers['x-kwik-signature']).toBeDefined();
+    });
+
     it('should store delivery with id starting with "wdl_"', async () => {
       mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
 
@@ -177,12 +209,37 @@ describe('WebhookDeliveryService', () => {
         event_type: 'PAYMENT_STATUS',
         target_url: 'https://hook.example.com',
         request_body: '{"pay_id":"pay_1","event_type":"PAYMENT_STATUS","event_id":"evt_abc"}',
+        request_headers: '{"Content-Type":"application/json"}',
       } as WebhookDeliveryEntity;
       mockRepo.findOne.mockResolvedValue(stored);
 
       await service.replay('wdl_1');
 
       expect(mockedAxios.post).toHaveBeenCalledWith('https://hook.example.com', expect.any(Object), expect.any(Object));
+    });
+
+    it('should replay with the original stored request headers', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+      mockConfig.webhookAuthMode = 'api-key';
+      const originalAuth = `Basic ${Buffer.from('old_key:old_secret').toString('base64')}`;
+      const stored = {
+        id: 'wdl_1',
+        event_id: 'evt_abc',
+        event_type: 'PAYMENT_STATUS',
+        target_url: 'https://hook.example.com',
+        request_body: '{"pay_id":"pay_1","event_type":"PAYMENT_STATUS","event_id":"evt_abc"}',
+        request_headers: JSON.stringify({
+          'Content-Type': 'application/json',
+          Authorization: originalAuth,
+        }),
+      } as WebhookDeliveryEntity;
+      mockRepo.findOne.mockResolvedValue(stored);
+
+      await service.replay('wdl_1');
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe(originalAuth);
+      expect(headers['x-kwik-api-key']).toBeUndefined();
     });
   });
 

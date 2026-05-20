@@ -155,12 +155,12 @@ function renderOverview() {
 // ---------- Records ----------
 
 const RECORD_COLUMNS = {
-  payment_methods: ['id', 'name', 'payment_method_type', 'status'],
-  lookups: ['id', 'name', 'code', 'payment_methods_id'],
+  payment_methods: ['id', 'abbreviated_name', 'payment_method_type', 'provider_bank'],
+  lookups: ['id', 'title', 'enum', 'payment_methods_id'],
   customers: ['id', 'reference', 'person_name', 'person_surname', 'email', 'contact_number', 'customer_status'],
   bank_accounts: ['id', 'customers_id', 'bank_account_number', 'bank_account_type', 'bank_name', 'bank_branch_code', 'status'],
   payments: ['id', 'mandate_id', 'customers_id', 'bank_accounts_id', 'payment_methods_id', 'amount', 'status', 'notify_url'],
-  mandates: ['id', 'customers_id', 'bank_accounts_id', 'payment_methods_id', 'amount', 'status'],
+  mandates: ['id', 'payments_id', 'customers_id', 'bank_accounts_id', 'status', 'cancel_reason'],
   checkout_sessions: ['id', 'customers_id', 'amount', 'mode', 'page_url', 'status', 'notify_url'],
 };
 
@@ -442,22 +442,14 @@ async function sendWebhook() {
 
   setStatus('#sender-validation', 'Sending…');
 
-  // If authMode is set explicitly, push it via /admin/scenario first so the
-  // delivery service picks it up. We restore afterwards is out-of-scope; this
-  // is a local test tool — leave the scenario state as configured.
-  if (authMode !== 'default') {
-    try {
-      const patch = { webhookAuthMode: authMode };
-      if (hmac) patch.webhookHmacSecret = hmac;
-      await api('/admin/scenario', { method: 'POST', body: patch });
-    } catch (e) {
-      setStatus('#sender-validation', 'Could not switch auth mode: ' + e.message, 'err');
-      return;
-    }
-  }
-
   const body = { target_url: target, event_type, payload };
-  if (key || secret) body.auth = { access_key: key, access_secret: secret };
+  if (authMode !== 'default' || key || secret || hmac) {
+    body.auth = {};
+    if (authMode !== 'default') body.auth.auth_mode = authMode;
+    if (key) body.auth.access_key = key;
+    if (secret) body.auth.access_secret = secret;
+    if (hmac) body.auth.hmac_secret = hmac;
+  }
 
   try {
     const r = await api('/admin/webhook/fire', { method: 'POST', body });

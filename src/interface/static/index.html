@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kwik Mock — Dashboard</title>
+  <link rel="stylesheet" href="/interface/assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>Kwik Mock</strong>
+      <span class="muted">local dashboard</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="records">Records</button>
+      <button class="tab" data-tab="webhooks">Webhooks</button>
+      <button class="tab" data-tab="sender">Event Sender</button>
+      <button class="tab" data-tab="scenario">Scenario</button>
+      <button class="tab" data-tab="raw">Raw Data</button>
+    </nav>
+    <div class="topbar-right">
+      <span class="muted" id="last-refresh">never refreshed</span>
+      <button class="btn" id="btn-refresh">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Overview -->
+    <section class="panel active" data-panel="overview">
+      <div class="row">
+        <div class="card">
+          <h3>Counters</h3>
+          <div class="counters" id="counters"></div>
+        </div>
+        <div class="card">
+          <h3>Current scenario</h3>
+          <div class="scenario-summary" id="scenario-summary"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Actions</h3>
+        <div class="btn-row">
+          <button class="btn" id="btn-refresh-2">Refresh</button>
+          <button class="btn" id="btn-seed">Re-seed</button>
+          <button class="btn warn" id="btn-reset">Reset transactional data</button>
+          <button class="btn warn" id="btn-reset-all">Reset all and re-seed</button>
+        </div>
+        <div id="actions-result" class="result-line"></div>
+      </div>
+    </section>
+
+    <!-- Records -->
+    <section class="panel" data-panel="records">
+      <div class="card">
+        <h3>Browse records</h3>
+        <div class="sub-tabs" id="record-tabs">
+          <button class="sub-tab active" data-record="payment_methods">Payment Methods</button>
+          <button class="sub-tab" data-record="lookups">Lookups / Banks</button>
+          <button class="sub-tab" data-record="customers">Customers</button>
+          <button class="sub-tab" data-record="bank_accounts">Bank Accounts</button>
+          <button class="sub-tab" data-record="payments">Payments</button>
+          <button class="sub-tab" data-record="mandates">Mandates</button>
+          <button class="sub-tab" data-record="checkout_sessions">Checkout Sessions</button>
+        </div>
+        <input type="text" id="record-filter" placeholder="Filter rows (any column)…" class="input full" />
+        <div id="record-table"></div>
+      </div>
+    </section>
+
+    <!-- Webhooks -->
+    <section class="panel" data-panel="webhooks">
+      <div class="card">
+        <h3>Webhook deliveries</h3>
+        <div class="filter-row">
+          <input type="text" id="wh-event-type" placeholder="event type…" class="input" />
+          <select id="wh-success" class="input">
+            <option value="all">All</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+            <option value="pending">Pending</option>
+          </select>
+          <input type="text" id="wh-target" placeholder="target URL…" class="input" />
+          <input type="text" id="wh-event-id" placeholder="event_id…" class="input" />
+        </div>
+        <div id="webhook-table"></div>
+      </div>
+    </section>
+
+    <!-- Event Sender -->
+    <section class="panel" data-panel="sender">
+      <div class="card">
+        <h3>Send webhook</h3>
+        <div class="form-grid">
+          <label>Jobix company UUID
+            <input type="text" id="sender-company" placeholder="e.g. 11111111-2222-3333-4444-555555555555" class="input" />
+          </label>
+          <div class="btn-row">
+            <button class="btn small" id="btn-build-local">Use local jb-inner-api</button>
+            <button class="btn small" id="btn-build-stage">Use stage jb-inner-api</button>
+            <button class="btn small" id="btn-clear-target">Clear</button>
+          </div>
+          <label class="full">Target URL
+            <input type="text" id="sender-target" placeholder="http://localhost:3005/v1/webhook/kwik/{companyUuid}" class="input" />
+          </label>
+          <label>Event type
+            <select id="sender-event-type" class="input">
+              <optgroup label="Legacy (Jobix Kwik webhook handler)">
+                <option>MANDATE_UPDATED</option>
+                <option>CHECKOUT_COMPLETED</option>
+                <option>PAYMENT_STATUS</option>
+              </optgroup>
+              <optgroup label="Resource events">
+                <option>bank_account.created</option>
+                <option>checkout.completed</option>
+                <option>checkout.expired</option>
+                <option>checkout.failed</option>
+                <option>customer.created</option>
+                <option>customer.updated</option>
+                <option>mandate.created</option>
+                <option>mandate.updated</option>
+                <option>payment.created</option>
+                <option>payment.updated</option>
+                <option>transaction.created</option>
+                <option>transaction.updated</option>
+              </optgroup>
+            </select>
+          </label>
+          <label>Auth mode
+            <select id="sender-auth-mode" class="input">
+              <option value="default">use scenario default</option>
+              <option value="basic">basic</option>
+              <option value="api-key">api-key</option>
+              <option value="hmac">hmac</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label>Access key
+            <input type="text" id="sender-access-key" class="input" />
+          </label>
+          <label>Access secret
+            <input type="text" id="sender-access-secret" class="input" />
+          </label>
+          <label class="full">HMAC secret (when mode = hmac)
+            <input type="text" id="sender-hmac-secret" class="input" />
+          </label>
+          <label class="full">Payload (JSON)
+            <textarea id="sender-payload" rows="14" class="input mono"></textarea>
+          </label>
+          <div class="btn-row full">
+            <button class="btn" id="btn-template">Load template</button>
+            <button class="btn" id="btn-pretty">Pretty-format JSON</button>
+            <button class="btn" id="btn-copy-payload">Copy payload</button>
+            <button class="btn primary" id="btn-send">Send webhook</button>
+            <span id="sender-validation" class="result-line"></span>
+          </div>
+        </div>
+        <div id="sender-result"></div>
+      </div>
+    </section>
+
+    <!-- Scenario Settings -->
+    <section class="panel" data-panel="scenario">
+      <div class="card">
+        <h3>Scenario settings</h3>
+        <div class="form-grid">
+          <label>authMode
+            <select id="sc-authMode" class="input">
+              <option value="loose">loose</option>
+              <option value="strict">strict</option>
+            </select>
+          </label>
+          <label>webhookAuthMode
+            <select id="sc-webhookAuthMode" class="input">
+              <option value="basic">basic</option>
+              <option value="api-key">api-key</option>
+              <option value="hmac">hmac</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="sc-cdvFailUnknown" /> cdvFailUnknown</label>
+          <label class="check"><input type="checkbox" id="sc-avsFailUnknown" /> avsFailUnknown</label>
+          <label class="full">defaultNotifyUrl
+            <input type="text" id="sc-defaultNotifyUrl" class="input" placeholder="leave empty to disable auto-delivery" />
+          </label>
+          <label>webhookAccessKey
+            <input type="text" id="sc-webhookAccessKey" class="input" />
+          </label>
+          <label>webhookAccessSecret
+            <input type="text" id="sc-webhookAccessSecret" class="input" />
+          </label>
+          <label class="full">webhookHmacSecret
+            <input type="text" id="sc-webhookHmacSecret" class="input" />
+          </label>
+          <div class="btn-row full">
+            <button class="btn primary" id="btn-scenario-save">Save settings</button>
+            <button class="btn" id="btn-scenario-reset">Reset local form</button>
+            <span id="scenario-result" class="result-line"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Raw Data -->
+    <section class="panel" data-panel="raw">
+      <div class="card">
+        <h3>Raw data <span class="muted">(GET /admin/data)</span></h3>
+        <div class="btn-row">
+          <button class="btn" id="btn-raw-refresh">Refresh</button>
+          <button class="btn" id="btn-raw-copy">Copy all JSON</button>
+          <span id="raw-result" class="result-line"></span>
+        </div>
+        <pre id="raw-pretty" class="json-block"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="/interface/assets/app.js"></script>
+</body>
+</html>

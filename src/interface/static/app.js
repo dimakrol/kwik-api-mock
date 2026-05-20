@@ -1,8 +1,21 @@
 'use strict';
 
+const RECORD_TYPES = [
+  'payment_methods',
+  'lookups',
+  'customers',
+  'bank_accounts',
+  'payments',
+  'mandates',
+  'checkout_sessions',
+];
+
+const MAIN_VIEWS = ['overview', 'records', 'webhooks', 'sender', 'scenario', 'raw'];
+
 const state = {
   data: null,
   summary: null,
+  view: 'overview',
   activeRecord: 'payment_methods',
   recordFilter: '',
   webhookFilters: {
@@ -93,18 +106,58 @@ async function refresh() {
   }
 }
 
+// ---------- Client-side routing ----------
+
+function parseRoute() {
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/' || path === '/interface') {
+    return { view: 'overview', record: state.activeRecord };
+  }
+  const parts = path.split('/').filter(Boolean);
+  if (parts[0] !== 'interface') {
+    return { view: 'overview', record: 'payment_methods' };
+  }
+  const section = parts[1] || 'overview';
+  if (section === 'records') {
+    const record = parts[2] || 'payment_methods';
+    return {
+      view: 'records',
+      record: RECORD_TYPES.includes(record) ? record : 'payment_methods',
+    };
+  }
+  if (MAIN_VIEWS.includes(section)) {
+    return { view: section, record: state.activeRecord };
+  }
+  return { view: 'overview', record: 'payment_methods' };
+}
+
+function pathForRoute(view, record) {
+  if (view === 'overview') return '/interface/overview';
+  if (view === 'records') return `/interface/records/${record || 'payment_methods'}`;
+  return `/interface/${view}`;
+}
+
+function applyRoute(route) {
+  state.view = route.view;
+  state.activeRecord = route.record;
+  $$('.tab').forEach((link) => link.classList.toggle('active', link.dataset.route === route.view));
+  $$('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === route.view));
+  if (route.view === 'records') {
+    $$('.sub-tab').forEach((link) => link.classList.toggle('active', link.dataset.record === route.record));
+    renderRecords();
+  }
+}
+
+function navigate(view, record) {
+  const nextRecord = record || state.activeRecord;
+  const path = pathForRoute(view, nextRecord);
+  if (location.pathname !== path) {
+    history.pushState({ view, record: nextRecord }, '', path);
+  }
+  applyRoute({ view, record: nextRecord });
+}
+
 // ---------- Tabs ----------
-
-function activateTab(name) {
-  $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  $$('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === name));
-}
-
-function activateRecord(name) {
-  state.activeRecord = name;
-  $$('.sub-tab').forEach((b) => b.classList.toggle('active', b.dataset.record === name));
-  renderRecords();
-}
 
 // ---------- Overview ----------
 
@@ -173,6 +226,18 @@ function rowMatchesFilter(row, filter) {
   );
 }
 
+async function deleteRecord(resource, id) {
+  if (!id) return;
+  if (!confirm(`Delete ${resource} "${id}" from the database?`)) return;
+  try {
+    await api(`/admin/records/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    setStatus('#actions-result', `Deleted ${resource} ${id}`, 'ok');
+    await refresh();
+  } catch (e) {
+    setStatus('#actions-result', 'Delete failed: ' + e.message, 'err');
+  }
+}
+
 function renderRecords() {
   const container = $('#record-table');
   container.innerHTML = '';
@@ -210,6 +275,10 @@ function renderRecords() {
     const detailId = `detail-${state.activeRecord}-${idx}`;
     const actions = el('div', { class: 'row-actions' }, [
       id ? el('button', { class: 'btn small', onclick: () => copy(String(id)) }, ['Copy ID']) : null,
+      id ? el('button', {
+        class: 'btn small danger',
+        onclick: () => deleteRecord(state.activeRecord, String(id)),
+      }, ['Delete']) : null,
       state.activeRecord === 'payments' && row.status === 'RUNNING' && id
         ? el('button', {
           class: 'btn small primary',
@@ -309,6 +378,10 @@ function renderWebhooks() {
 
     const detailId = `wh-detail-${idx}`;
     const actions = el('div', { class: 'row-actions' }, [
+      d.id ? el('button', {
+        class: 'btn small danger',
+        onclick: () => deleteRecord('webhook_deliveries', String(d.id)),
+      }, ['Delete']) : null,
       el('button', { class: 'btn small', onclick: () => replayDelivery(d.id) }, ['Replay']),
       el('button', { class: 'btn small', onclick: () => copy(d.request_body || '') }, ['Copy req']),
       el('button', { class: 'btn small', onclick: () => copy(d.request_headers || '') }, ['Copy headers']),
@@ -578,8 +651,19 @@ async function runReset(all) {
 // ---------- Wiring ----------
 
 function init() {
-  $$('.tab').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
-  $$('.sub-tab').forEach((b) => b.addEventListener('click', () => activateRecord(b.dataset.record)));
+  $$('.tab').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigate(link.dataset.route, state.activeRecord);
+    });
+  });
+  $$('.sub-tab').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigate('records', link.dataset.record);
+    });
+  });
+  window.addEventListener('popstate', () => applyRoute(parseRoute()));
 
   $('#btn-refresh').addEventListener('click', refresh);
   $('#btn-refresh-2').addEventListener('click', refresh);
@@ -610,6 +694,11 @@ function init() {
   $('#btn-raw-copy').addEventListener('click', () => copy(JSON.stringify(state.data || {}, null, 2)));
 
   loadTemplate();
+  const initial = parseRoute();
+  if (location.pathname === '/' || location.pathname === '/interface') {
+    history.replaceState(initial, '', pathForRoute(initial.view, initial.record));
+  }
+  applyRoute(initial);
   refresh();
 }
 

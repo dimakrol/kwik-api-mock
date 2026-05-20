@@ -84,6 +84,11 @@ export class WebhookDeliveryService {
     await this.repo.clear();
   }
 
+  async deleteById(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id });
+    return (result.affected ?? 0) > 0;
+  }
+
   private async postAndStore(opts: StoreDeliveryOptions): Promise<WebhookDeliveryEntity> {
     let response_status = 0;
     let response_body: string | null = null;

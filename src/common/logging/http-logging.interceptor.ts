@@ -15,6 +15,9 @@ import {
 
 type RequestWithMeta = Request & { rawBody?: string };
 
+/** High-frequency polling endpoints — skip inbound request/response logs. */
+const SKIP_INBOUND_LOG_PATHS = ['/admin/interface-data'];
+
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
   constructor(private readonly logger: PinoLogger) {
@@ -29,6 +32,12 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const http = context.switchToHttp();
     const req = http.getRequest<RequestWithMeta>();
     const res = http.getResponse<Response>();
+
+    const path = req.path ?? req.url?.split('?')[0] ?? '';
+    if (SKIP_INBOUND_LOG_PATHS.some((skip) => path === skip || path.startsWith(`${skip}/`))) {
+      return next.handle();
+    }
+
     const started = Date.now();
 
     this.logger.info(

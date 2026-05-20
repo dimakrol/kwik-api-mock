@@ -1,3 +1,4 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AdminService } from '../src/admin/admin.service';
@@ -13,19 +14,20 @@ import { SeedService } from '../src/seed/seed.service';
 import { PaymentsService } from '../src/payments/payments.service';
 import { mockConfig } from '../src/common/mock-config';
 
-const mockPaymentMethodRepo = { find: jest.fn(), clear: jest.fn() };
-const mockLookupRepo = { find: jest.fn(), clear: jest.fn() };
+const mockPaymentMethodRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn() };
+const mockLookupRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn() };
 const mockCustomerRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn() };
-const mockBankAccountRepo = { find: jest.fn(), clear: jest.fn() };
-const mockPaymentRepo = { find: jest.fn(), clear: jest.fn() };
-const mockMandateRepo = { find: jest.fn(), clear: jest.fn() };
-const mockCheckoutRepo = { find: jest.fn(), clear: jest.fn() };
+const mockBankAccountRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn() };
+const mockPaymentRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn(), findOne: jest.fn(), update: jest.fn() };
+const mockMandateRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn(), findOne: jest.fn() };
+const mockCheckoutRepo = { find: jest.fn(), clear: jest.fn(), delete: jest.fn() };
 const mockSeedService = { seed: jest.fn().mockResolvedValue(undefined) };
 const mockWebhookDeliveryService = {
   deliver: jest.fn(),
   replay: jest.fn(),
   findAll: jest.fn().mockResolvedValue([]),
   clear: jest.fn().mockResolvedValue(undefined),
+  deleteById: jest.fn(),
 };
 const mockPaymentsService = {
   complete: jest.fn(),
@@ -221,6 +223,38 @@ describe('AdminService', () => {
     it('should call seedService.seed()', async () => {
       await service.runSeed();
       expect(mockSeedService.seed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('deleteRecord()', () => {
+    it('should delete a lookup by id', async () => {
+      mockLookupRepo.delete.mockResolvedValue({ affected: 1 });
+
+      const result = await service.deleteRecord('lookups', 'loo_abc');
+
+      expect(result).toEqual({ ok: true, resource: 'lookups', id: 'loo_abc' });
+      expect(mockLookupRepo.delete).toHaveBeenCalledWith({ id: 'loo_abc' });
+    });
+
+    it('should cascade delete payment and linked mandate', async () => {
+      mockPaymentRepo.findOne.mockResolvedValue({ id: 'pay_abc', mandate_id: 'man_abc' });
+      mockPaymentRepo.delete.mockResolvedValue({ affected: 1 });
+      mockMandateRepo.delete.mockResolvedValue({ affected: 1 });
+
+      await service.deleteRecord('payments', 'pay_abc');
+
+      expect(mockMandateRepo.delete).toHaveBeenCalledWith({ id: 'man_abc' });
+      expect(mockMandateRepo.delete).toHaveBeenCalledWith({ payments_id: 'pay_abc' });
+      expect(mockPaymentRepo.delete).toHaveBeenCalledWith({ id: 'pay_abc' });
+    });
+
+    it('should throw NotFoundException when record missing', async () => {
+      mockLookupRepo.delete.mockResolvedValue({ affected: 0 });
+      await expect(service.deleteRecord('lookups', 'loo_missing')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException for unknown resource', async () => {
+      await expect(service.deleteRecord('unknown_table', 'x')).rejects.toThrow(BadRequestException);
     });
   });
 

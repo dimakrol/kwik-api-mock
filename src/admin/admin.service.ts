@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
+import { ADMIN_RECORD_RESOURCES, type AdminRecordResource, isAdminRecordResource } from './admin-records.util';
 import { PaymentMethodEntity } from '../database/entities/payment-method.entity';
 import { LookupEntity } from '../database/entities/lookup.entity';
 import { CustomerEntity } from '../database/entities/customer.entity';
@@ -55,6 +56,91 @@ export class AdminService {
   ): Promise<object> {
     const payments = await this.paymentsService.complete(paymentsId, options);
     return { ok: true, payments };
+  }
+
+  async deleteRecord(resource: string, id: string): Promise<{ ok: true; resource: AdminRecordResource; id: string }> {
+    if (!id?.trim()) {
+      throw new BadRequestException({ ok: false, message: 'Record id is required' });
+    }
+    if (!isAdminRecordResource(resource)) {
+      throw new BadRequestException({
+        ok: false,
+        message: `Unknown resource "${resource}". Allowed: ${ADMIN_RECORD_RESOURCES.join(', ')}`,
+      });
+    }
+
+    const deleted = await this.deleteRecordByType(resource, id.trim());
+    if (!deleted) {
+      throw new NotFoundException({ ok: false, message: `${resource} "${id}" not found` });
+    }
+
+    return { ok: true, resource, id: id.trim() };
+  }
+
+  private async deleteRecordByType(resource: AdminRecordResource, id: string): Promise<boolean> {
+    switch (resource) {
+      case 'payment_methods': {
+        await this.lookupRepo.delete({ payment_methods_id: id });
+        const result = await this.paymentMethodRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'lookups': {
+        const result = await this.lookupRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'customers': {
+        await this.bankAccountRepo.delete({ customers_id: id });
+        const payments = await this.paymentRepo.find({ where: { customers_id: id } });
+        for (const payment of payments) {
+          await this.deletePaymentCascade(payment.id);
+        }
+        const mandates = await this.mandateRepo.find({ where: { customers_id: id } });
+        if (mandates.length > 0) {
+          await this.mandateRepo.delete({ id: In(mandates.map((m) => m.id)) });
+        }
+        await this.checkoutRepo.delete({ customers_id: id });
+        const result = await this.customerRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'bank_accounts': {
+        const result = await this.bankAccountRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'payments':
+        return this.deletePaymentCascade(id);
+      case 'mandates': {
+        const mandate = await this.mandateRepo.findOne({ where: { id } });
+        if (!mandate) return false;
+        if (mandate.payments_id) {
+          await this.paymentRepo.update(mandate.payments_id, { mandate_id: null });
+        }
+        const result = await this.mandateRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'checkout_sessions': {
+        const result = await this.checkoutRepo.delete({ id });
+        return (result.affected ?? 0) > 0;
+      }
+      case 'webhook_deliveries': {
+        const result = await this.webhookDeliveryService.deleteById(id);
+        return result;
+      }
+      default:
+        return false;
+    }
+  }
+
+  private async deletePaymentCascade(paymentId: string): Promise<boolean> {
+    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+    if (!payment) return false;
+
+    if (payment.mandate_id) {
+      await this.mandateRepo.delete({ id: payment.mandate_id });
+    }
+    await this.mandateRepo.delete({ payments_id: paymentId });
+
+    const result = await this.paymentRepo.delete({ id: paymentId });
+    return (result.affected ?? 0) > 0;
   }
 
   async fireWebhook(dto: FireWebhookDto): Promise<object> {

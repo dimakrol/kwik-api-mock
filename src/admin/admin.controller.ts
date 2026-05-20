@@ -80,6 +80,19 @@ export class AdminController {
     return this.service.completePayment(paymentsId, body);
   }
 
+  @Delete('records/:resource/:id')
+  @ApiOperation({ summary: 'Delete a single record from the mock database' })
+  @ApiParam({ name: 'resource', description: 'Table key: payment_methods, lookups, customers, …' })
+  @ApiParam({ name: 'id', description: 'Primary key (e.g. pay_xxx, cus_xxx)' })
+  @ApiResponse({ status: 200, schema: { example: { ok: true, resource: 'payments', id: 'pay_xxx' } } })
+  @ApiResponse({ status: 404, description: 'Record not found' })
+  async deleteRecord(
+    @Param('resource') resource: string,
+    @Param('id') id: string,
+  ): Promise<object> {
+    return this.service.deleteRecord(resource, id);
+  }
+
   @Get('data')
   @ApiOperation({ summary: 'Dump all database data and scenario config' })
   @ApiResponse({

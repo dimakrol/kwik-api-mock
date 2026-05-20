@@ -40,6 +40,13 @@ describe('InterfaceController', () => {
     expect(res.text).toContain('<title>Kwik Mock');
   });
 
+  it('GET /interface/records/payments should return SPA HTML for client routing', async () => {
+    const res = await request(app.getHttpServer()).get('/interface/records/payments');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.text).toContain('id="record-table"');
+  });
+
   it('GET /interface/assets/styles.css should serve CSS', async () => {
     const res = await request(app.getHttpServer()).get('/interface/assets/styles.css');
     expect(res.status).toBe(200);

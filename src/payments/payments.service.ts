@@ -85,35 +85,12 @@ export class PaymentsService {
 
     const effectiveNotifyUrl = resolvePaymentNotifyUrl(payment);
     if (effectiveNotifyUrl) {
-      await this.webhookDelivery.deliver({
-        event_type: 'MANDATE_UPDATED',
-        target_url: effectiveNotifyUrl,
-        payload: {
-          kwik_mandate_id: mandateId,
-          mandate_id: mandateId,
-          kwik_payment_id: paymentId,
-          payments_id: paymentId,
-          kwik_customer_id: dto.customers_id,
-          customers_id: dto.customers_id,
-          mandate_status: 'PENDING',
-          status: 'PENDING',
-        },
-      });
-      await this.webhookDelivery.deliver({
-        event_type: 'PAYMENT_STATUS',
-        target_url: effectiveNotifyUrl,
-        payload: {
-          kwik_payment_id: paymentId,
-          payments_id: paymentId,
-          kwik_mandate_id: mandateId,
-          mandate_id: mandateId,
-          kwik_customer_id: dto.customers_id,
-          customers_id: dto.customers_id,
-          transaction_id: genId('txn'),
-          amount: dto.amount,
-          payment_status: 'RUNNING',
-          status: 'RUNNING',
-        },
+      this.deliverInitialWebhooksAfterResponse({
+        targetUrl: effectiveNotifyUrl,
+        mandateId,
+        paymentId,
+        customersId: dto.customers_id,
+        amount: dto.amount,
       });
     }
 
@@ -130,6 +107,62 @@ export class PaymentsService {
       date_end: payment.date_end,
       status: payment.status,
     };
+  }
+
+  private deliverInitialWebhooksAfterResponse(args: {
+    targetUrl: string;
+    mandateId: string;
+    paymentId: string;
+    customersId: string;
+    amount: string;
+  }): void {
+    setTimeout(() => {
+      void this.deliverInitialWebhooks(args).catch((error) => {
+        this.logger.error(
+          `Failed to deliver initial payment webhooks for ${args.paymentId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+    }, 1000);
+  }
+
+  private async deliverInitialWebhooks(args: {
+    targetUrl: string;
+    mandateId: string;
+    paymentId: string;
+    customersId: string;
+    amount: string;
+  }): Promise<void> {
+    await this.webhookDelivery.deliver({
+      event_type: 'MANDATE_UPDATED',
+      target_url: args.targetUrl,
+      payload: {
+        kwik_mandate_id: args.mandateId,
+        mandate_id: args.mandateId,
+        kwik_payment_id: args.paymentId,
+        payments_id: args.paymentId,
+        kwik_customer_id: args.customersId,
+        customers_id: args.customersId,
+        mandate_status: 'PENDING',
+        status: 'PENDING',
+      },
+    });
+    await this.webhookDelivery.deliver({
+      event_type: 'PAYMENT_STATUS',
+      target_url: args.targetUrl,
+      payload: {
+        kwik_payment_id: args.paymentId,
+        payments_id: args.paymentId,
+        kwik_mandate_id: args.mandateId,
+        mandate_id: args.mandateId,
+        kwik_customer_id: args.customersId,
+        customers_id: args.customersId,
+        transaction_id: genId('txn'),
+        amount: args.amount,
+        payment_status: 'RUNNING',
+        status: 'RUNNING',
+      },
+    });
   }
 
   async updateStatus(paymentsId: string, status: string): Promise<object> {

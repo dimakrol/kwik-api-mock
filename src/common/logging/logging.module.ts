@@ -10,9 +10,14 @@ import { OutboundLogService } from './outbound-log.service';
       pinoHttp: {
         level: process.env.LOG_LEVEL ?? 'info',
         autoLogging: {
-          ignore: (req) =>
-            req.url?.startsWith('/docs') === true ||
-            req.url?.startsWith('/interface/assets') === true,
+          ignore: (req) => {
+            const url = req.url?.split('?')[0] ?? '';
+            return (
+              url.startsWith('/docs') ||
+              url.startsWith('/interface/assets') ||
+              url === '/admin/interface-data'
+            );
+          },
         },
         transport:
           process.env.NODE_ENV !== 'production'

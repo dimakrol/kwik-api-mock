@@ -28,12 +28,6 @@ export class InterfaceController {
     return readStatic('index.html');
   }
 
-  @Get('interface')
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  getInterface(): string {
-    return readStatic('index.html');
-  }
-
   @Get('interface/assets/:asset')
   getAsset(@Param('asset') asset: string, @Res() res: Response): void {
     const entry = ASSETS[asset];
@@ -42,5 +36,18 @@ export class InterfaceController {
     }
     res.setHeader('Content-Type', entry.type);
     res.send(readStatic(entry.file));
+  }
+
+  @Get('interface')
+  @Get('interface/overview')
+  @Get('interface/webhooks')
+  @Get('interface/sender')
+  @Get('interface/scenario')
+  @Get('interface/raw')
+  @Get('interface/records')
+  @Get('interface/records/:recordType')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  getInterface(): string {
+    return readStatic('index.html');
   }
 }

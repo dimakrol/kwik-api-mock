@@ -64,6 +64,7 @@ html, body {
 }
 
 .tab, .sub-tab {
+  display: inline-block;
   background: transparent;
   border: 1px solid transparent;
   padding: 6px 12px;
@@ -71,6 +72,7 @@ html, body {
   cursor: pointer;
   font-size: 13px;
   color: var(--muted);
+  text-decoration: none;
 }
 
 .tab:hover, .sub-tab:hover {
@@ -199,6 +201,15 @@ main {
   color: var(--warn);
 }
 .btn.warn:hover {
+  background: var(--bad-bg);
+}
+
+.btn.danger {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.btn.danger:hover {
   background: var(--bad-bg);
 }
 

@@ -12,6 +12,11 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",

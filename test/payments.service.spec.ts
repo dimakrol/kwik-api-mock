@@ -142,18 +142,25 @@ describe('PaymentsService', () => {
     });
 
     it('should deliver MANDATE_UPDATED and PAYMENT_STATUS webhooks when notify_url provided', async () => {
+      jest.useFakeTimers();
       await service.submit({ ...baseDto, notify_url: 'https://hook.example.com' });
+      expect(mockWebhookDelivery.deliver).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1000);
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledTimes(2);
       const calls = mockWebhookDelivery.deliver.mock.calls.map((c: [Record<string, unknown>]) => c[0].event_type);
       expect(calls).toContain('MANDATE_UPDATED');
       expect(calls).toContain('PAYMENT_STATUS');
+      jest.useRealTimers();
     });
 
     it('should deliver webhooks to default URL when company_uuid is set', async () => {
+      jest.useFakeTimers();
       await service.submit({ ...baseDto, company_uuid: 'co-dev' });
+      await jest.advanceTimersByTimeAsync(1000);
       expect(mockWebhookDelivery.deliver).toHaveBeenCalledTimes(2);
       const target = mockWebhookDelivery.deliver.mock.calls[0][0].target_url as string;
       expect(target).toBe('http://localhost:3005/v1/webhook/kwik/co-dev');
+      jest.useRealTimers();
     });
   });
 
